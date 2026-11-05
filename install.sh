@@ -83,7 +83,10 @@ GENERATED=""
 read -srp "Panel password (empty — generate a strong one): " PASS
 echo
 if [ -z "$PASS" ]; then
-  PASS=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20)
+  # tr gets SIGPIPE when head exits — under `set -o pipefail` that would kill
+  # the script, so tolerate the exit code; the 20 chars are captured regardless.
+  PASS=$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 20) || true
+  [ -n "$PASS" ] || { echo "Error: failed to generate a password"; exit 1; }
   GENERATED=1
 fi
 
