@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Amnezia Panel{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<aside class="sidebar">
+  <div class="logo">Amnezia<span>Panel</span></div>
+  <nav>
+    <a href="/" class="{{ 'active' if request.url.path == '/' }}">Services</a>
+    <div class="nav-title">VPN</div>
+    <a href="/keys/amnezia-awg" class="{{ 'active' if request.url.path.startswith('/keys') }}">Keys</a>
+    <a href="/extras/mtproxy" class="{{ 'active' if request.url.path.startswith('/extras') }}">Proxy & DNS</a>
+    <div class="nav-title">System</div>
+    <a href="/logout">Logout</a>
+  </nav>
+</aside>
+<main class="content">
+{% block content %}{% endblock %}
+</main>
+<script>
+function confirmAction(msg) { return window.confirm(msg); }
+</script>
+</body>
+</html>

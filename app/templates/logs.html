@@ -1,0 +1,7 @@
+{% extends "base.html" %}
+{% block title %}Logs {{ name }} — Amnezia Panel{% endblock %}
+{% block content %}
+<h1>Logs: <span class="mono">{{ name }}</span></h1>
+<p><a href="/">← Services</a></p>
+<pre class="logs">{{ logs }}</pre>
+{% endblock %}

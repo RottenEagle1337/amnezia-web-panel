@@ -1,0 +1,9 @@
+{
+  "name": "amnezia-web-panel",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Web panel for Amnezia VPN server (dev runner wraps uvicorn)",
+  "scripts": {
+    "dev": "PANEL_BACKEND=mock .venv/bin/uvicorn app.main:app"
+  }
+}

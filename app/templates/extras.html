@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Proxy & DNS — Amnezia Panel{% endblock %}
+{% block content %}
+<h1>Proxy & DNS</h1>
+
+<div class="proto-switch">
+  <a class="pill {{ 'active' if service == 'mtproxy' }}" href="/extras/mtproxy">MTProxy</a>
+  <a class="pill {{ 'active' if service == 'telemt' }}" href="/extras/telemt">Telemt</a>
+  <a class="pill {{ 'active' if service == 'dns' }}" href="/extras/dns">AmneziaDNS</a>
+</div>
+
+{% if proxy %}
+<div class="card">
+  <h2>{{ 'MTProxy' if proxy.kind == 'mtproxy' else 'Telemt' }}
+    {% if proxy.running %}<span class="badge ok">online</span>
+    {% else %}<span class="badge">{{ 'stopped' if proxy.port or proxy.mode else 'not installed' }}</span>{% endif %}
+  </h2>
+  {% if proxy.kind == 'mtproxy' %}
+  <p class="hint">Official Telegram proxy by Amnezia. Configuration: container env and /data/secret.</p>
+  {% else %}
+  <p class="hint">Fast MTProxy written in Rust. Configuration: /data/config.toml. A config editor is coming later.</p>
+  {% endif %}
+  {% if proxy.error %}<p class="error">{{ proxy.error }}</p>{% endif %}
+  {% if proxy.port or proxy.mode %}
+  <table class="kv">
+    {% if endpoint_host %}<tr><td>Server</td><td class="mono">{{ endpoint_host }}</td></tr>{% endif %}
+    {% if proxy.port %}<tr><td>Port</td><td class="mono">{{ proxy.port }}</td></tr>{% endif %}
+    {% if proxy.mode %}<tr><td>Mode</td><td class="mono">{{ proxy.mode }}</td></tr>{% endif %}
+    {% if proxy.domain %}<tr><td>Masking</td><td class="mono">{{ proxy.domain }}</td></tr>{% endif %}
+  </table>
+  {% endif %}
+  {% if proxy.links %}
+    {% for link in proxy.links %}
+    <div class="link-row">
+      <div class="link-info">
+        <div class="link-label">{{ link.label }}</div>
+        <div class="mono small link-text" id="tg-{{ loop.index }}">{{ link.tg_link }}</div>
+        <div class="link-actions">
+          <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('tg-{{ loop.index }}').textContent)">Copy tg://</button>
+          <a class="btn" href="{{ link.tme_link }}" target="_blank" rel="noopener">Open in Telegram</a>
+        </div>
+      </div>
+      <div class="link-qr"><img src="{{ qrs[link.tg_link] }}" alt="QR {{ link.label }}"></div>
+    </div>
+    {% endfor %}
+  {% elif proxy.running %}
+    <p class="hint">No secrets found — check the container configuration.</p>
+  {% endif %}
+</div>
+{% elif dns %}
+<div class="card">
+  <h2>AmneziaDNS
+    {% if dns.running %}<span class="badge ok">online</span>
+    {% else %}<span class="badge">{{ 'stopped' if dns.network or dns.image else 'not installed' }}</span>{% endif %}
+  </h2>
+  <p class="hint">Local DNS resolver (Unbound) for VPN clients.</p>
+  {% if dns.image or dns.network %}
+  <table class="kv">
+    {% if dns.image %}<tr><td>Image</td><td class="mono">{{ dns.image }}</td></tr>{% endif %}
+    {% if dns.network %}<tr><td>Network</td><td class="mono">{{ dns.network }}</td></tr>{% endif %}
+    {% if dns.ip %}<tr><td>IP</td><td class="mono">{{ dns.ip }}</td></tr>{% endif %}
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,23 @@
+services:
+  panel:
+    build: .
+    image: amnezia-web-panel:latest
+    container_name: amnezia-web-panel
+    restart: unless-stopped
+    healthcheck:
+      # no curl in the slim image — probe via python
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    ports:
+      - "${PANEL_PORT:-8080}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      PANEL_BACKEND: docker
+      PANEL_PASSWORD_HASH: ${PANEL_PASSWORD_HASH:?Set PANEL_PASSWORD_HASH in .env}
+      AWG_ENDPOINT_HOST: ${AWG_ENDPOINT_HOST:?Set AWG_ENDPOINT_HOST in .env}
+      AWG_ENDPOINT_PORT: ${AWG_ENDPOINT_PORT:-51820}

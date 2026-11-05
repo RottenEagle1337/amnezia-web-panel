@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Key issued — Amnezia Panel{% endblock %}
+{% block content %}
+<h1>Key "{{ created_name }}" issued</h1>
+<p class="warn">Shown once and not stored. Hand it to the client now.</p>
+{% if not endpoint_ok %}
+<p class="error">AWG_ENDPOINT_HOST is not set — fix the Endpoint in the config manually.</p>
+{% endif %}
+
+<div class="created-grid">
+  <div class="card qr-block">
+    <h2>AmneziaVPN</h2>
+    <img id="vpn-qr" src="{{ vpn_frames[0] }}" alt="QR for the AmneziaVPN app">
+    {% if vpn_frames|length > 1 %}
+    <div class="cap">Animated QR — frame <span id="frame-no">1</span>/{{ vpn_frames|length }}.<br>Point the camera and hold still; the app will collect all frames.</div>
+    {% else %}
+    <div class="cap">AmneziaVPN app — scan or paste the key below</div>
+    {% endif %}
+  </div>
+  <div class="card qr-block">
+    <h2>AmneziaWG / WireGuard</h2>
+    <img src="{{ qr }}" alt="AWG config QR">
+    <div class="cap">AmneziaWG app — scan or import the .conf</div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>AmneziaVPN key (vpn://)</h2>
+  <pre class="logs vpn-link" id="vpnlink">{{ vpn_link }}</pre>
+  <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('vpnlink').textContent)">Copy key</button>
+</div>
+
+<div class="card">
+  <h2>.conf config</h2>
+  <pre class="logs config" id="conf">{{ config }}</pre>
+  <button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('conf').textContent)">Copy config</button>
+</div>
+
+<p><a class="btn primary" href="/keys/{{ container }}">Done</a></p>
+
+{% if vpn_frames|length > 1 %}
+<script>
+(function () {
+  var frames = {{ vpn_frames | tojson }};
+  var img = document.getElementById('vpn-qr');
+  var label = document.getElementById('frame-no');
+  var i = 0;
+  setInterval(function () {
+    i = (i + 1) % frames.length;
+    img.src = frames[i];
+    label.textContent = String(i + 1);
+  }, 1200);
+})();
+</script>
+{% endif %}
+{% endblock %}
