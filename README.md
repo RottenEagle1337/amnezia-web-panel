@@ -31,10 +31,11 @@ cd amnezia-web-panel
 ./install.sh
 ```
 
-The script asks for the panel port (**empty input — 8080 if free**), a password
+The script asks for the panel port (**empty input — 8080 if free**), the
+availability mode (**all interfaces / localhost only**), a password
 (**empty input — generates a strong one and shows it once**; it is never stored),
 detects your public IP, writes only a PBKDF2 hash into `.env`, and starts the
-container. At the end it prints the panel links on your local network.
+container. At the end it prints how to reach the panel.
 
 Panel: `http://<server-ip>:8080`
 
@@ -129,6 +130,20 @@ pytest tests/ -q
 | `AWG_ENDPOINT_PORT` | no | AWG port, default `51820` |
 | `PANEL_BACKEND` | no | `docker` (prod) or `mock` (development) |
 | `PANEL_PORT` | no | panel port on the host, default `8080` |
+| `PANEL_BIND` | no | bind address, default `0.0.0.0`; use `127.0.0.1` on a public VPS |
+
+### Public VPS? Use an SSH tunnel
+
+The panel is designed for LAN. On a public VPS, pick **"Localhost only"** when
+the installer asks for the availability mode, then reach it through an SSH tunnel:
+
+```bash
+# on your machine
+ssh -L 8080:localhost:8080 user@your-vps
+# then open http://localhost:8080
+```
+
+For non-interactive installs you can preset the mode: `PANEL_BIND=127.0.0.1 ./install.sh`.
 
 ## Security
 
