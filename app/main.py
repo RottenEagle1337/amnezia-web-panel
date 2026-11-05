@@ -183,6 +183,10 @@ def _register_routes(app: FastAPI) -> None:
                 app.state.backend, container, name, ENDPOINT_HOST, ENDPOINT_PORT)
         except keys.AWGError as exc:
             return RedirectResponse(f"/keys/{container}?error={exc}", status_code=303)
+        except Exception as exc:
+            # Surface the real cause on the page instead of a bare 500.
+            return RedirectResponse(f"/keys/{container}?error={type(exc).__name__}: {exc}",
+                                    status_code=303)
         # One-time view: config lives only in this page, never stored by the panel.
         vpn_frames = [_qr_data_uri(f, "L") for f in amnezia_fmt.vpn_qr_frames(vpn_link)]
         return render(request, "created.html", container=container,
