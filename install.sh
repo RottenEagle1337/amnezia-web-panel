@@ -102,8 +102,10 @@ fi
 [ -n "$HOST" ] || { echo "Error: server address is required"; exit 1; }
 
 # --- The password hash is computed inside the image (no Python needed on the host) ---
+# NOTE: plain `docker build`, not `docker compose build` — compose validates
+# required .env variables that only get written below, and would fail here.
 echo "Building the image..."
-docker compose build -q panel
+docker build -q -t amnezia-web-panel:latest .
 HASH=$(printf '%s' "$PASS" | docker run --rm -i amnezia-web-panel:latest python -m app.passhash)
 # docker compose interpolates $ in .env — escape as $$
 HASH_ESCAPED=${HASH//\$/\$\$}
