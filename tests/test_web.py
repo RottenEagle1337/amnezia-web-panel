@@ -66,6 +66,18 @@ def test_restart_and_logs():
     assert "mock log line" in page
 
 
+def test_keys_page_missing_container_shows_notice():
+    c = _client()
+    # simulate a server without the amnezia-awg2 container
+    backend = c.app.state.backend
+    backend._services = [s for s in backend._services if s.name != "amnezia-awg2"]
+    page = c.get("/keys/amnezia-awg2").text
+    assert "not installed" in page
+    assert "Issue key" not in page
+    # existing container still works
+    assert "phone-ivan" in c.get("/keys/amnezia-awg").text
+
+
 def test_healthz_no_auth():
     c = TestClient(create_app())
     assert c.get("/healthz").json() == {"ok": True}

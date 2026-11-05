@@ -12,7 +12,13 @@
 
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
-{% if placeholder %}
+{% if missing %}
+<div class="card placeholder-card">
+  <h2><span class="mono">{{ container }}</span></h2>
+  <p><span class="badge">not installed</span></p>
+  <p class="hint">This protocol is not deployed on the server. Install it via the Amnezia app, then reload this page.</p>
+</div>
+{% elif placeholder %}
 <div class="card placeholder-card">
   <h2>{{ placeholder_name }}</h2>
   <p class="hint">Key management for {{ placeholder_name }} is coming in a future version of the panel.</p>

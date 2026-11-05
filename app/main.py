@@ -136,6 +136,8 @@ def _register_routes(app: FastAPI) -> None:
             logs = app.state.backend.logs(name, tail=300)
         except ContainerNotFound:
             logs = "container not found"
+        except Exception as exc:  # docker API errors — show instead of a bare 500
+            logs = f"error fetching logs: {exc}"
         return render(request, "logs.html", name=name, logs=logs)
 
     @app.get("/keys/{container}", response_class=HTMLResponse)
@@ -150,13 +152,23 @@ def _register_routes(app: FastAPI) -> None:
                           placeholder_name=PLACEHOLDERS[container], installed=installed)
         if container not in keys.MANAGEABLE:
             return RedirectResponse("/", status_code=303)
+        backend = app.state.backend
+        installed = any(s.name == container for s in backend.list_services())
+        if not installed:
+            return render(request, "keys.html", container=container, clients=[], error="",
+                          created_name="", config="", qr="", placeholder=False,
+                          placeholder_name="", installed=False, missing=True)
         try:
-            clients = keys.list_clients(app.state.backend, container)
+            clients = keys.list_clients(backend, container)
+        except ContainerNotFound:
+            return render(request, "keys.html", container=container, clients=[], error="",
+                          created_name="", config="", qr="", placeholder=False,
+                          placeholder_name="", installed=False, missing=True)
         except keys.AWGError as exc:
             clients, error = [], str(exc)
         return render(request, "keys.html", container=container, clients=clients, error=error,
                       created_name=created_name, config=config, qr=qr,
-                      placeholder=False, placeholder_name="", installed=True)
+                      placeholder=False, placeholder_name="", installed=True, missing=False)
 
     @app.post("/keys/{container}/create")
     async def create_key(request: Request, container: str, name: str = Form(...)):
@@ -165,6 +177,8 @@ def _register_routes(app: FastAPI) -> None:
         if container not in keys.MANAGEABLE:
             return RedirectResponse("/", status_code=303)
         try:
+            if not any(s.name == container for s in app.state.backend.list_services()):
+                return RedirectResponse(f"/keys/{container}", status_code=303)
             client_name, config_text, vpn_link = keys.create_client(
                 app.state.backend, container, name, ENDPOINT_HOST, ENDPOINT_PORT)
         except keys.AWGError as exc:
@@ -185,6 +199,8 @@ def _register_routes(app: FastAPI) -> None:
             return RedirectResponse("/", status_code=303)
         try:
             keys.revoke_client(app.state.backend, container, client_id)
+        except ContainerNotFound:
+            return RedirectResponse(f"/keys/{container}", status_code=303)
         except keys.AWGError as exc:
             return RedirectResponse(f"/keys/{container}?error={exc}", status_code=303)
         return RedirectResponse(f"/keys/{container}", status_code=303)
