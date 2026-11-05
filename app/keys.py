@@ -11,12 +11,22 @@ from .amnezia_fmt import build_vpn_link
 from .backend.base import Backend
 
 AWG_DIR = "/opt/amnezia/awg"
-CONF = f"{AWG_DIR}/wg0.conf"
 TABLE = f"{AWG_DIR}/clientsTable"
 SERVER_PUB = f"{AWG_DIR}/wireguard_server_public_key.key"
 
 # Containers that hold an AWG-style layout we can manage.
 MANAGEABLE = ("amnezia-awg", "amnezia-awg2")
+
+# Per-container layout: config file path and interface name.
+# amnezia-awg uses wg0.conf/wg0, amnezia-awg2 uses awg0.conf/awg0.
+LAYOUTS = {
+    "amnezia-awg": {"conf": f"{AWG_DIR}/wg0.conf", "iface": "wg0"},
+    "amnezia-awg2": {"conf": f"{AWG_DIR}/awg0.conf", "iface": "awg0"},
+}
+
+
+def _layout(container: str) -> dict:
+    return LAYOUTS.get(container, LAYOUTS["amnezia-awg"])
 
 
 @dataclass
@@ -57,11 +67,13 @@ def _write(backend: Backend, container: str, path: str, content: str) -> None:
 
 
 def _syncconf(backend: Backend, container: str) -> None:
-    _run(backend, container, ["bash", "-c", f"wg syncconf wg0 <(wg-quick strip {CONF})"])
+    lay = _layout(container)
+    _run(backend, container,
+         ["bash", "-c", f"wg syncconf {lay['iface']} <(wg-quick strip {lay['conf']})"])
 
 
 def _load(backend: Backend, container: str) -> tuple[awg.ServerConfig, list[dict]]:
-    cfg = awg.parse_wg_conf(_read(backend, container, CONF))
+    cfg = awg.parse_wg_conf(_read(backend, container, _layout(container)["conf"]))
     table = awg.parse_clients_table(_read(backend, container, TABLE))
     return cfg, table
 
@@ -101,6 +113,11 @@ def create_client(backend: Backend, container: str, name: str,
     if not name or len(name) > 64 or any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
         raise AWGError("bad client name")
     cfg, table = _load(backend, container)
+    if not cfg.interface.get("Address"):
+        raise AWGError(
+            f"no Address in [Interface] of {_layout(container)['conf']} "
+            "(config missing or unreadable in container)"
+        )
 
     private_key = crypto.gen_private_key()
     public_key = crypto.public_key(private_key)
@@ -108,7 +125,7 @@ def create_client(backend: Backend, container: str, name: str,
     address = awg.next_free_ip(cfg)
 
     cfg.peers.append(awg.Peer(public_key=public_key, preshared_key=preshared_key, allowed_ips=address))
-    _write(backend, container, CONF, awg.render_wg_conf(cfg))
+    _write(backend, container, _layout(container)["conf"], awg.render_wg_conf(cfg))
 
     table.append({"clientId": public_key, "userData": {
         "clientName": name,
@@ -141,6 +158,6 @@ def revoke_client(backend: Backend, container: str, client_id: str) -> None:
     if len(peers) == len(cfg.peers) and len(new_table) == len(table):
         raise AWGError("client not found")
     cfg.peers = peers
-    _write(backend, container, CONF, awg.render_wg_conf(cfg))
+    _write(backend, container, _layout(container)["conf"], awg.render_wg_conf(cfg))
     _write(backend, container, TABLE, json.dumps(new_table, indent=2))
     _syncconf(backend, container)
