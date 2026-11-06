@@ -7,18 +7,21 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+{% if not hide_sidebar %}
 <aside class="sidebar">
   <div class="logo">Amnezia<span>Panel</span></div>
   <nav>
     <a href="/" class="{{ 'active' if request.url.path == '/' }}">Services</a>
     <div class="nav-title">VPN</div>
     <a href="/keys/amnezia-awg" class="{{ 'active' if request.url.path.startswith('/keys') }}">Keys</a>
+    {% if install_nav %}<a href="/deploy" class="{{ 'active' if request.url.path.startswith('/deploy') }}">Install</a>{% endif %}
     <a href="/extras/mtproxy" class="{{ 'active' if request.url.path.startswith('/extras') }}">Proxy & DNS</a>
     <div class="nav-title">System</div>
     <a href="/logout">Logout</a>
   </nav>
 </aside>
-<main class="content">
+{% endif %}
+<main class="content{% if hide_sidebar %} no-sidebar{% endif %}">
 {% block content %}{% endblock %}
 </main>
 <script>

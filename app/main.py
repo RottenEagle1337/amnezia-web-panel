@@ -81,7 +81,7 @@ def _register_routes(app: FastAPI) -> None:
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request, error: str = ""):
-        return render(request, "login.html", error=error)
+        return render(request, "login.html", error=error, hide_sidebar=True)
 
     @app.post("/login")
     def login(request: Request, password: str = Form(...)):
