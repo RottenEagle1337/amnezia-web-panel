@@ -65,3 +65,27 @@ def test_awg2_layout_supported():
     _, config, _ = keys.create_client(backend, "amnezia-awg2", "d2", "1.2.3.4", "51821")
     # AWG 3.1 obfuscation params must land in the client config
     assert "S3 = " in config and "I1 = " in config
+
+
+def test_awg2_writes_awg0_conf():
+    """amnezia-awg2 stores peers in awg0.conf, not wg0.conf."""
+    from app.backend.mock_backend import WG0_CONF_AWG2
+    backend = MockBackend()
+    before = backend._fs["amnezia-awg2"]["/opt/amnezia/awg/awg0.conf"]
+    keys.create_client(backend, "amnezia-awg2", "layout-check", "1.2.3.4", "51821")
+    fs = backend._fs["amnezia-awg2"]
+    assert fs["/opt/amnezia/awg/awg0.conf"] != before
+    assert fs["/opt/amnezia/awg/awg0.conf"].count("[Peer]") == before.count("[Peer]") + 1
+    assert fs["/opt/amnezia/awg/wg0.conf"] == WG0_CONF_AWG2
+
+
+def test_create_missing_conf_raises_awgerror():
+    """Empty/unreadable server config gives AWGError, not a bare ValueError."""
+    backend = MockBackend()
+    del backend._fs["amnezia-awg"]["/opt/amnezia/awg/wg0.conf"]
+    try:
+        keys.create_client(backend, "amnezia-awg", "x", "1.2.3.4", "51820")
+    except keys.AWGError as exc:
+        assert "Address" in str(exc)
+    else:
+        raise AssertionError("expected AWGError")
