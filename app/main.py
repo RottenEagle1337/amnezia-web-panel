@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import amnezia_fmt, extras, hostinfo, keys
+from . import amnezia_fmt, awg, configedit, extras, hostinfo, keys
 from .auth import Auth, LoginThrottle, require_session
 from .backend import ContainerNotFound, make_backend
 
@@ -115,7 +115,7 @@ def _register_routes(app: FastAPI) -> None:
         host = hostinfo.fetch_host_info(app.state.backend_kind)
         return render(request, "services.html", services=services, host=host,
                       manageable=set(keys.MANAGEABLE), endpoint_host=ENDPOINT_HOST,
-                      self_name=SELF_NAME)
+                      self_name=SELF_NAME, config_specs=set(configedit.SPECS))
 
     @app.post("/services/{name}/restart")
     def restart_service(request: Request, name: str):
@@ -170,8 +170,14 @@ def _register_routes(app: FastAPI) -> None:
                           placeholder_name="", installed=False, missing=True)
         except keys.AWGError as exc:
             clients, error = [], str(exc)
+        proto_info = {}
+        try:
+            iface = awg.parse_wg_conf(configedit.read_config(backend, container)).interface
+            proto_info = {"port": iface.get("ListenPort", ""), "subnet": iface.get("Address", "")}
+        except Exception:
+            pass
         return render(request, "keys.html", container=container, clients=clients, error=error,
-                      created_name=created_name, config=config, qr=qr,
+                      created_name=created_name, config=config, qr=qr, proto_info=proto_info,
                       placeholder=False, placeholder_name="", installed=True, missing=False)
 
     @app.post("/keys/{container}/create")
@@ -242,6 +248,63 @@ def _register_routes(app: FastAPI) -> None:
             dns = extras.dns_info(backend)
         return render(request, "extras.html", service=service, proxy=proxy, dns=dns,
                       qrs=qrs, endpoint_host=host)
+
+    @app.get("/config/{container}", response_class=HTMLResponse)
+    def config_page(request: Request, container: str, applied: str = "", err: str = ""):
+        if (r := require_session(request)) is not None:
+            return r
+        if container not in configedit.SPECS:
+            return RedirectResponse("/", status_code=303)
+        backend = app.state.backend
+        try:
+            text = configedit.read_config(backend, container)
+            backups = configedit.list_backups(backend, container)
+        except Exception:
+            return RedirectResponse("/", status_code=303)
+        cfg = awg.parse_wg_conf(text) if configedit.SPECS[container].fmt == "awg" else None
+        fmt = configedit.SPECS[container].fmt
+        back_url = f"/keys/{container}" if fmt == "awg" else "/extras/telemt"
+        return render(request, "config.html", spec_container=container, text=text,
+                      errors=[err] if err else [], backups=backups, applied=applied,
+                      field_specs=configedit.FIELD_SPECS,
+                      field_sections=configedit.FIELD_SECTIONS,
+                      interface=cfg.interface if cfg else {},
+                      fmt=fmt, back_url=back_url)
+
+    @app.post("/config/{container}", response_class=HTMLResponse)
+    def config_save(request: Request, container: str, text: str = Form(...)):
+        if (r := require_session(request)) is not None:
+            return r
+        if container not in configedit.SPECS:
+            return RedirectResponse("/", status_code=303)
+        backend = app.state.backend
+        fmt = configedit.SPECS[container].fmt
+        back_url = f"/keys/{container}" if fmt == "awg" else "/extras/telemt"
+        try:
+            configedit.apply_config(backend, container, text)
+        except keys.AWGError as exc:
+            # Keep the field form populated from the submitted text on errors.
+            submitted = awg.parse_wg_conf(text).interface if fmt == "awg" else {}
+            return render(request, "config.html", spec_container=container, text=text,
+                          errors=str(exc).split("; "),
+                          backups=configedit.list_backups(backend, container),
+                          applied="", field_specs=configedit.FIELD_SPECS,
+                          field_sections=configedit.FIELD_SECTIONS,
+                          interface=submitted, fmt=fmt, back_url=back_url)
+        return RedirectResponse(f"/config/{container}?applied=1", status_code=303)
+
+    @app.post("/config/{container}/restore")
+    def config_restore(request: Request, container: str, backup: str = Form(...)):
+        if (r := require_session(request)) is not None:
+            return r
+        if container not in configedit.SPECS:
+            return RedirectResponse("/", status_code=303)
+        try:
+            configedit.restore_backup(app.state.backend, container, backup)
+        except keys.AWGError as exc:
+            return RedirectResponse(
+                f"/config/{container}?err={urllib.parse.quote(str(exc))}", status_code=303)
+        return RedirectResponse(f"/config/{container}?applied=restored", status_code=303)
 
     @app.get("/healthz")
     def healthz():

@@ -81,3 +81,92 @@ def test_keys_page_missing_container_shows_notice():
 def test_healthz_no_auth():
     c = TestClient(create_app())
     assert c.get("/healthz").json() == {"ok": True}
+
+
+def test_config_editor_page_and_apply():
+    c = _client()
+    r = c.get("/config/amnezia-awg")
+    assert r.status_code == 200 and "Jc" in r.text
+    # apply a valid change
+    text = c.app.state.backend._fs["amnezia-awg"]["/opt/amnezia/awg/wg0.conf"]
+    r = c.post("/config/amnezia-awg", data={"text": text.replace("Jc = 3", "Jc = 7")},
+               follow_redirects=False)
+    assert r.status_code == 303
+    assert "Jc = 7" in c.app.state.backend._fs["amnezia-awg"]["/opt/amnezia/awg/wg0.conf"]
+
+
+def test_config_editor_rejects_invalid():
+    c = _client()
+    r = c.post("/config/amnezia-awg", data={"text": "garbage"})
+    assert "error" in r.text or "ListenPort" in r.text  # re-rendered with errors
+
+
+def test_config_editor_unknown_container():
+    c = _client()
+    r = c.get("/config/amnezia-xray", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/"
+
+
+def test_config_editor_requires_auth():
+    c = TestClient(create_app())
+    r = c.get("/config/amnezia-awg", follow_redirects=False)
+    assert r.status_code == 303 and r.headers["location"] == "/login"
+
+
+def test_config_editor_field_form():
+    c = _client()
+    page = c.get("/config/amnezia-awg2").text
+    # editable fields rendered as inputs
+    for key in ("ListenPort", "Jc", "S1", "H1", "HeaderProtectionKey"):
+        assert f'data-key="{key}"' in page
+    # on/off fields are dropdowns (AWG 3.1 only)
+    assert 'data-key="RandomTrailers"' in page and "<select" in page
+    # non-editable fields are NOT inputs
+    assert 'data-key="PrivateKey"' not in page
+    assert 'data-key="Address"' not in page
+    assert 'data-key="PostUp"' not in page
+    # awg 2.0 has no 3.1-only fields
+    page2 = c.get("/config/amnezia-awg").text
+    assert 'data-key="HeaderProtectionKey"' not in page2
+    assert 'data-key="RandomTrailers"' not in page2
+
+
+def test_config_editor_sections():
+    c = _client()
+    page = c.get("/config/amnezia-awg2").text
+    for section in ("General", "Junk packets", "Packet sizes", "Magic headers",
+                    "Header protection", "Rekey", "Cookies"):
+        assert section in page
+    # awg 2.0 shows only the sections its fields belong to
+    page2 = c.get("/config/amnezia-awg").text
+    assert "Junk packets" in page2 and "Cookies" not in page2
+
+
+def test_duplicate_key_name_rejected():
+    c = _client()
+    r = c.post("/keys/amnezia-awg/create", data={"name": "phone-ivan"},
+               follow_redirects=False)
+    assert r.status_code == 303 and "error=" in r.headers["location"]
+    assert "exists" in r.headers["location"]
+    # same name on another protocol is fine
+    r = c.post("/keys/amnezia-awg2/create", data={"name": "phone-ivan"},
+               follow_redirects=False)
+    assert r.status_code == 200  # issued -> one-time created page
+
+
+def test_keys_page_proto_info_and_config_button():
+    c = _client()
+    page = c.get("/keys/amnezia-awg").text
+    assert "51820" in page                      # port from live config
+    assert "10.8.1.1/24" in page                # subnet
+    assert 'href="/config/amnezia-awg"' in page
+    cfg = c.get("/config/amnezia-awg").text
+    assert 'href="/keys/amnezia-awg"' in cfg    # Cancel returns to the protocol page
+
+
+def test_config_restore_bad_backup_shows_error():
+    c = _client()
+    r = c.post("/config/amnezia-awg/restore",
+               data={"backup": "/opt/amnezia/awg/wg0.conf.bak-nope"},
+               follow_redirects=False)
+    assert "err=" in r.headers["location"]

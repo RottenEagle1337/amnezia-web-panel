@@ -43,6 +43,9 @@
       <td class="small">{{ s.started_at[:19].replace('T', ' ') if s.started_at else '—' }}</td>
       <td class="actions">
         <a class="btn" href="/services/{{ s.name }}/logs">Logs</a>
+        {% if s.name in config_specs %}
+        <a class="btn" href="/config/{{ s.name }}">Config</a>
+        {% endif %}
         {% if s.name in manageable %}
         <a class="btn primary" href="/keys/{{ s.name }}">Keys</a>
         {% endif %}

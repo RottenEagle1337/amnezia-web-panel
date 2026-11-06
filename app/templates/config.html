@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Config {{ spec_container }} — Amnezia Panel{% endblock %}
+{% block content %}
+<h1>Config: <span class="mono">{{ spec_container }}</span></h1>
+{% if applied %}<p class="hint">✓ Applied ({{ applied }})</p>{% endif %}
+{% for e in errors %}<p class="error">{{ e }}</p>{% endfor %}
+<div class="card">
+<form method="post" action="/config/{{ spec_container }}" id="cfgform">
+  {% if fmt == 'awg' %}
+  {% for section, fields in field_sections %}
+  {% set visible = fields | selectattr(0, 'in', interface) | list %}
+  {% if visible %}
+  <h2 class="section-title">{{ section }}</h2>
+  <div class="field-grid">
+    {% for name, kind in visible %}
+    <div class="field">
+      <label for="f-{{ name }}">{{ name }}</label>
+      {% if kind == 'onoff' %}
+      <select id="f-{{ name }}" data-key="{{ name }}">
+        <option value="on" {{ 'selected' if interface[name] == 'on' }}>on</option>
+        <option value="off" {{ 'selected' if interface[name] == 'off' }}>off</option>
+      </select>
+      {% else %}
+      <input id="f-{{ name }}" data-key="{{ name }}" type="{{ 'number' if kind == 'port' else 'text' }}"
+             value="{{ interface[name] }}" autocomplete="off" spellcheck="false">
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endfor %}
+  <p class="hint">Only the fields above are editable — same set as the Amnezia app.
+     [Peer] sections are managed on the Keys page.</p>
+  <details class="raw-wrap">
+    <summary>Raw config</summary>
+    <textarea class="code" name="text" id="cfgtext" spellcheck="false">{{ text }}</textarea>
+  </details>
+  {% else %}
+  <textarea class="code" name="text" id="cfgtext" spellcheck="false">{{ text }}</textarea>
+  {% endif %}
+  <p class="hint">Validated on save. A backup is created automatically.</p>
+  <button class="btn primary" type="submit">Validate & apply</button>
+  <a class="btn" href="{{ back_url }}">Cancel</a>
+</form>
+</div>
+{% if backups %}
+<div class="card">
+  <h2>Backups</h2>
+  {% for b in backups %}
+  <form method="post" action="/config/{{ spec_container }}/restore" class="inline-form"
+        onsubmit='return confirmAction("Restore " + {{ b | tojson }} + "? Current config is backed up first.")'>
+    <span class="mono small" style="flex:1">{{ b }}</span>
+    <input type="hidden" name="backup" value="{{ b }}">
+    <button class="btn" type="submit">Restore</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+{% if fmt == 'awg' %}
+<script>
+(function () {
+  var ta = document.getElementById('cfgtext');
+  var inputs = document.querySelectorAll('[data-key]');
+  function sync() {
+    var values = {};
+    inputs.forEach(function (inp) { values[inp.dataset.key] = inp.value; });
+    var inInterface = false;
+    ta.value = ta.value.split('\n').map(function (line) {
+      if (/^\s*\[/.test(line)) inInterface = /^\s*\[Interface\]\s*$/.test(line.trim());
+      var m = line.match(/^\s*([A-Za-z0-9]+)\s*=/);
+      if (inInterface && m && values[m[1]] !== undefined) return m[1] + ' = ' + values[m[1]];
+      return line;
+    }).join('\n');
+  }
+  // Sync on field edits only. A submit-time sync would silently overwrite
+  // manual edits made in the raw textarea with the (stale) field values.
+  inputs.forEach(function (inp) { inp.addEventListener('input', sync); inp.addEventListener('change', sync); });
+})();
+</script>
+{% endif %}
+{% endblock %}

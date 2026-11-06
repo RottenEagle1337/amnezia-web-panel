@@ -32,7 +32,18 @@
 </div>
 {% else %}
 <div class="card">
-  <h2>Issue key <span class="small mono">({{ container }})</span></h2>
+  <h2>Protocol</h2>
+  <table class="kv">
+    <tr><td>Container</td><td class="mono">{{ container }}</td></tr>
+    {% if proto_info.port %}<tr><td>Port</td><td class="mono">{{ proto_info.port }}/udp</td></tr>{% endif %}
+    {% if proto_info.subnet %}<tr><td>Subnet</td><td class="mono">{{ proto_info.subnet }}</td></tr>{% endif %}
+    <tr><td>Clients</td><td>{{ clients|length }}</td></tr>
+  </table>
+  <div class="card-actions"><a class="btn" href="/config/{{ container }}">Server config</a></div>
+</div>
+
+<div class="card">
+  <h2>Issue key</h2>
   <form method="post" action="/keys/{{ container }}/create" class="inline-form">
     <input type="text" name="name" placeholder="Client name (e.g. phone-maria)" maxlength="64" required>
     <button class="btn primary" type="submit">Issue</button>

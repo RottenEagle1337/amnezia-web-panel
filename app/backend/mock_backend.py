@@ -221,6 +221,10 @@ class MockBackend:
             b64 = b64.replace("echo", "").strip()
             files[path.strip()] = base64.b64decode(b64).decode()
             return 0, ""
+        if cmd[:2] == ["sh", "-c"] and cmd[2].startswith("ls -1 "):
+            prefix = cmd[2].split("ls -1 ", 1)[1].split(" 2>/dev/null")[0].rstrip("*")
+            hits = sorted(p for p in files if p.startswith(prefix))
+            return (0, "\n".join(hits) + "\n") if hits else (1, "")
         return 1, f"mock: unsupported command: {joined}"
 
     def restart(self, container: str) -> None:

@@ -120,6 +120,9 @@ def create_client(backend: Backend, container: str, name: str,
         raise AWGError("bad client name")
     with _locks[container]:
         cfg, table = _load(backend, container)
+        # Names are unique per protocol — the client list is keyed by name in the UI.
+        if any(e.get("userData", {}).get("clientName") == name for e in table):
+            raise AWGError(f"name already exists: {name}")
         if not cfg.interface.get("Address"):
             raise AWGError(
                 f"no Address in [Interface] of {_layout(container)['conf']} "

@@ -93,6 +93,19 @@ textarea.code { width: 100%; min-height: 320px; font-family: ui-monospace, Menlo
 .link-actions { margin-top: 8px; display: flex; gap: 8px; }
 .link-qr img { width: 96px; height: 96px; background: #fff; border-radius: 8px; padding: 5px; }
 .placeholder-card { text-align: left; }
+/* config editor field form */
+.section-title { margin: 18px 0 10px; padding-top: 14px; border-top: 1px solid var(--border);
+                 color: var(--muted); font-size: 12px; text-transform: uppercase;
+                 letter-spacing: .08em; font-weight: 600; }
+.field-grid { display: grid; grid-template-columns: repeat(auto-fill, 180px);
+              gap: 12px; margin-bottom: 6px; }
+.field { width: 180px; }
+.field label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 5px;
+               font-family: ui-monospace, Menlo, monospace; }
+.field input, .field select { width: 180px; height: 38px; }
+.raw-wrap { margin: 4px 0 12px; }
+.card-actions { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.raw-wrap summary { color: var(--muted); cursor: pointer; font-size: 13px; margin-bottom: 8px; }
 /* login */
 .content.no-sidebar { margin-left: 0; max-width: none; }
 .login-wrap { min-height: calc(100vh - 64px); display: grid; place-items: center; }
