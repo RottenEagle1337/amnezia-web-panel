@@ -69,14 +69,22 @@ def test_awg2_layout_supported():
 
 def test_awg2_writes_awg0_conf():
     """amnezia-awg2 stores peers in awg0.conf, not wg0.conf."""
-    from app.backend.mock_backend import WG0_CONF_AWG2
     backend = MockBackend()
-    before = backend._fs["amnezia-awg2"]["/opt/amnezia/awg/awg0.conf"]
-    keys.create_client(backend, "amnezia-awg2", "layout-check", "1.2.3.4", "51821")
     fs = backend._fs["amnezia-awg2"]
+    assert "/opt/amnezia/awg/wg0.conf" not in fs  # awg2 has no wg0.conf at all
+    before = fs["/opt/amnezia/awg/awg0.conf"]
+    keys.create_client(backend, "amnezia-awg2", "layout-check", "1.2.3.4", "51821")
     assert fs["/opt/amnezia/awg/awg0.conf"] != before
     assert fs["/opt/amnezia/awg/awg0.conf"].count("[Peer]") == before.count("[Peer]") + 1
-    assert fs["/opt/amnezia/awg/wg0.conf"] == WG0_CONF_AWG2
+    assert "/opt/amnezia/awg/wg0.conf" not in fs  # nothing leaked into wg0.conf
+
+
+def test_awg2_revoke():
+    backend = MockBackend()
+    cid = keys.list_clients(backend, "amnezia-awg2")[0].client_id
+    keys.revoke_client(backend, "amnezia-awg2", cid)
+    assert keys.list_clients(backend, "amnezia-awg2") == []
+    assert "[Peer]" not in backend._fs["amnezia-awg2"]["/opt/amnezia/awg/awg0.conf"]
 
 
 def test_create_missing_conf_raises_awgerror():

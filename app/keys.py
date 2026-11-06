@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -27,6 +28,11 @@ LAYOUTS = {
 
 def _layout(container: str) -> dict:
     return LAYOUTS.get(container, LAYOUTS["amnezia-awg"])
+
+
+# Read-modify-write of wg0.conf/awg0.conf is not atomic — serialize per container
+# so two concurrent issues cannot allocate the same IP.
+_locks: dict[str, threading.Lock] = {name: threading.Lock() for name in MANAGEABLE}
 
 
 @dataclass
@@ -112,27 +118,28 @@ def create_client(backend: Backend, container: str, name: str,
     # The name lands in clientsTable and vpn:// — control characters are rejected.
     if not name or len(name) > 64 or any(ord(ch) < 32 or ord(ch) == 127 for ch in name):
         raise AWGError("bad client name")
-    cfg, table = _load(backend, container)
-    if not cfg.interface.get("Address"):
-        raise AWGError(
-            f"no Address in [Interface] of {_layout(container)['conf']} "
-            "(config missing or unreadable in container)"
-        )
+    with _locks[container]:
+        cfg, table = _load(backend, container)
+        if not cfg.interface.get("Address"):
+            raise AWGError(
+                f"no Address in [Interface] of {_layout(container)['conf']} "
+                "(config missing or unreadable in container)"
+            )
 
-    private_key = crypto.gen_private_key()
-    public_key = crypto.public_key(private_key)
-    preshared_key = crypto.gen_psk()
-    address = awg.next_free_ip(cfg)
+        private_key = crypto.gen_private_key()
+        public_key = crypto.public_key(private_key)
+        preshared_key = crypto.gen_psk()
+        address = awg.next_free_ip(cfg)
 
-    cfg.peers.append(awg.Peer(public_key=public_key, preshared_key=preshared_key, allowed_ips=address))
-    _write(backend, container, _layout(container)["conf"], awg.render_wg_conf(cfg))
+        cfg.peers.append(awg.Peer(public_key=public_key, preshared_key=preshared_key, allowed_ips=address))
+        _write(backend, container, _layout(container)["conf"], awg.render_wg_conf(cfg))
 
-    table.append({"clientId": public_key, "userData": {
-        "clientName": name,
-        "creationDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-    }})
-    _write(backend, container, TABLE, json.dumps(table, indent=2))
-    _syncconf(backend, container)
+        table.append({"clientId": public_key, "userData": {
+            "clientName": name,
+            "creationDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        }})
+        _write(backend, container, TABLE, json.dumps(table, indent=2))
+        _syncconf(backend, container)
 
     server_pub = _read(backend, container, SERVER_PUB).strip()
     # Real listen port from the server config wins over the env default.
@@ -152,12 +159,13 @@ def create_client(backend: Backend, container: str, name: str,
 
 
 def revoke_client(backend: Backend, container: str, client_id: str) -> None:
-    cfg, table = _load(backend, container)
-    peers = [p for p in cfg.peers if p.public_key != client_id]
-    new_table = [e for e in table if e.get("clientId") != client_id]
-    if len(peers) == len(cfg.peers) and len(new_table) == len(table):
-        raise AWGError("client not found")
-    cfg.peers = peers
-    _write(backend, container, _layout(container)["conf"], awg.render_wg_conf(cfg))
-    _write(backend, container, TABLE, json.dumps(new_table, indent=2))
-    _syncconf(backend, container)
+    with _locks[container]:
+        cfg, table = _load(backend, container)
+        peers = [p for p in cfg.peers if p.public_key != client_id]
+        new_table = [e for e in table if e.get("clientId") != client_id]
+        if len(peers) == len(cfg.peers) and len(new_table) == len(table):
+            raise AWGError("client not found")
+        cfg.peers = peers
+        _write(backend, container, _layout(container)["conf"], awg.render_wg_conf(cfg))
+        _write(backend, container, TABLE, json.dumps(new_table, indent=2))
+        _syncconf(backend, container)

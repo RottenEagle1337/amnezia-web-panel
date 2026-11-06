@@ -144,7 +144,6 @@ class MockBackend:
             },
             "amnezia-awg2": {
                 "/opt/amnezia/awg/awg0.conf": WG0_CONF_AWG2,
-                "/opt/amnezia/awg/wg0.conf": WG0_CONF_AWG2,
                 "/opt/amnezia/awg/clientsTable": __import__("json").dumps(CLIENTS_AWG2, indent=2),
                 "/opt/amnezia/awg/wireguard_server_public_key.key": "srVpubkeyAwg2xAmPlE2yAmPlE3yAmPlE4yAmPlE=",
                 "/opt/amnezia/awg/wireguard_psk.key": "pskMockKeyAwg2xAmPlE2yAmPlE3yAmPlE4yAmPl=",

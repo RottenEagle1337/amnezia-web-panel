@@ -1,7 +1,8 @@
 """External host info (what the server looks like from the internet).
 
-Uses ip-api.com (free, no key). Cached for 5 minutes: geolocation does not
-change often and the free tier is rate-limited.
+Uses ipinfo.io (free tier, HTTPS, no key). Cached for 5 minutes: geolocation
+does not change often and the free tier is rate-limited. The free API exposes
+no hosting/proxy flags, so the address type is reported as "Unknown".
 """
 from __future__ import annotations
 
@@ -9,10 +10,7 @@ import json
 import time
 import urllib.request
 
-IP_API_URL = (
-    "http://ip-api.com/json/?fields="
-    "status,country,countryCode,regionName,city,isp,org,as,hosting,proxy,query"
-)
+IP_API_URL = "https://ipinfo.io/json"
 
 _cache: tuple[float, dict] | None = None
 CACHE_TTL = 300
@@ -31,14 +29,6 @@ MOCK_INFO = {
 }
 
 
-def _address_type(hosting: bool, proxy: bool) -> str:
-    if hosting:
-        return "Data center"
-    if proxy:
-        return "Proxy/VPN"
-    return "Residential"
-
-
 def fetch_host_info(backend_kind: str = "docker") -> dict:
     global _cache
     if backend_kind == "mock":
@@ -46,23 +36,26 @@ def fetch_host_info(backend_kind: str = "docker") -> dict:
     if _cache and time.time() - _cache[0] < CACHE_TTL:
         return dict(_cache[1])
     try:
-        with urllib.request.urlopen(IP_API_URL, timeout=3) as resp:
+        req = urllib.request.Request(IP_API_URL, headers={"User-Agent": "amnezia-web-panel"})
+        with urllib.request.urlopen(req, timeout=3) as resp:
             data = json.loads(resp.read().decode())
-        if data.get("status") != "success":
-            raise RuntimeError(f"ip-api: {data.get('message', 'failed')}")
+        if "ip" not in data:
+            raise RuntimeError(f"ipinfo: {data.get('error', {}).get('message', 'failed')}")
+        org = data.get("org", "")          # e.g. "AS64496 Mock Hosting BV"
+        asn, _, isp = org.partition(" ")
         info = {
-            "ip": data.get("query", ""),
-            "country": data.get("country", ""),
-            "countryCode": data.get("countryCode", ""),
-            "region": data.get("regionName", ""),
+            "ip": data.get("ip", ""),
+            "country": "",
+            "countryCode": data.get("country", ""),
+            "region": data.get("region", ""),
             "city": data.get("city", ""),
-            "isp": data.get("isp", ""),
-            "org": data.get("org", ""),
-            "as": data.get("as", ""),
-            "address_type": _address_type(bool(data.get("hosting")), bool(data.get("proxy"))),
-            "source": "ip-api.com",
+            "isp": isp,
+            "org": isp,
+            "as": asn,
+            "address_type": "Unknown",     # not exposed by the free API
+            "source": "ipinfo.io",
         }
     except Exception as exc:
-        info = {"ip": "", "error": str(exc), "source": "ip-api.com"}
+        info = {"ip": "", "error": str(exc), "source": "ipinfo.io"}
     _cache = (time.time(), info)
     return dict(info)

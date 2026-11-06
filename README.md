@@ -169,7 +169,7 @@ app/
   amnezia_fmt.py       AmneziaVPN format export (vpn://)
   awg.py               wg0.conf / clientsTable / wg show dump parsing
   crypto.py            WireGuard keys (X25519, pure Python)
-  hostinfo.py          server's external view (ip-api.com, 5 min cache)
+  hostinfo.py          server's external view (ipinfo.io over HTTPS, 5 min cache)
   backend/             docker socket (prod) / in-memory mock (development)
 tests/                 pytest: 43 tests
 docs/research.md       Amnezia formats research (step 1)

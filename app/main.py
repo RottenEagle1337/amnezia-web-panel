@@ -4,6 +4,7 @@ import base64
 import io
 import os
 import re
+import urllib.parse
 
 import qrcode
 from fastapi import FastAPI, Form, Request
@@ -79,11 +80,11 @@ def _register_routes(app: FastAPI) -> None:
         return templates.TemplateResponse(request, page, ctx)
 
     @app.get("/login", response_class=HTMLResponse)
-    async def login_page(request: Request, error: str = ""):
+    def login_page(request: Request, error: str = ""):
         return render(request, "login.html", error=error)
 
     @app.post("/login")
-    async def login(request: Request, password: str = Form(...)):
+    def login(request: Request, password: str = Form(...)):
         auth: Auth = request.app.state.auth
         ip = request.client.host if request.client else "unknown"
         if not throttle.allowed(ip):
@@ -97,13 +98,16 @@ def _register_routes(app: FastAPI) -> None:
         return resp
 
     @app.get("/logout")
-    async def logout():
+    def logout(request: Request):
+        # Single-admin panel: rotating the secret invalidates every outstanding
+        # token server-side, so a copied cookie dies at logout, not at TTL expiry.
+        request.app.state.auth.rotate_secret()
         resp = RedirectResponse("/login", status_code=303)
         resp.delete_cookie("panel_session")
         return resp
 
     @app.get("/", response_class=HTMLResponse)
-    async def dashboard(request: Request):
+    def dashboard(request: Request):
         if (r := require_session(request)) is not None:
             return r
         backend = app.state.backend
@@ -114,7 +118,7 @@ def _register_routes(app: FastAPI) -> None:
                       self_name=SELF_NAME)
 
     @app.post("/services/{name}/restart")
-    async def restart_service(request: Request, name: str):
+    def restart_service(request: Request, name: str):
         if (r := require_session(request)) is not None:
             return r
         # Amnezia containers only; the panel must not restart itself (drops sessions).
@@ -127,7 +131,7 @@ def _register_routes(app: FastAPI) -> None:
         return RedirectResponse("/", status_code=303)
 
     @app.get("/services/{name}/logs", response_class=HTMLResponse)
-    async def service_logs(request: Request, name: str):
+    def service_logs(request: Request, name: str):
         if (r := require_session(request)) is not None:
             return r
         if not SAFE_CONTAINER.match(name):
@@ -141,7 +145,7 @@ def _register_routes(app: FastAPI) -> None:
         return render(request, "logs.html", name=name, logs=logs)
 
     @app.get("/keys/{container}", response_class=HTMLResponse)
-    async def keys_page(request: Request, container: str, error: str = "", created_name: str = "",
+    def keys_page(request: Request, container: str, error: str = "", created_name: str = "",
                         config: str = "", qr: str = ""):
         if (r := require_session(request)) is not None:
             return r
@@ -171,7 +175,7 @@ def _register_routes(app: FastAPI) -> None:
                       placeholder=False, placeholder_name="", installed=True, missing=False)
 
     @app.post("/keys/{container}/create")
-    async def create_key(request: Request, container: str, name: str = Form(...)):
+    def create_key(request: Request, container: str, name: str = Form(...)):
         if (r := require_session(request)) is not None:
             return r
         if container not in keys.MANAGEABLE:
@@ -182,11 +186,13 @@ def _register_routes(app: FastAPI) -> None:
             client_name, config_text, vpn_link = keys.create_client(
                 app.state.backend, container, name, ENDPOINT_HOST, ENDPOINT_PORT)
         except keys.AWGError as exc:
-            return RedirectResponse(f"/keys/{container}?error={exc}", status_code=303)
+            return RedirectResponse(
+                f"/keys/{container}?error={urllib.parse.quote(str(exc))}", status_code=303)
         except Exception as exc:
             # Surface the real cause on the page instead of a bare 500.
-            return RedirectResponse(f"/keys/{container}?error={type(exc).__name__}: {exc}",
-                                    status_code=303)
+            return RedirectResponse(
+                f"/keys/{container}?error={urllib.parse.quote(f'{type(exc).__name__}: {exc}')}",
+                status_code=303)
         # One-time view: config lives only in this page, never stored by the panel.
         vpn_frames = [_qr_data_uri(f, "L") for f in amnezia_fmt.vpn_qr_frames(vpn_link)]
         return render(request, "created.html", container=container,
@@ -196,7 +202,7 @@ def _register_routes(app: FastAPI) -> None:
                       endpoint_ok=bool(ENDPOINT_HOST))
 
     @app.post("/keys/{container}/revoke")
-    async def revoke_key(request: Request, container: str, client_id: str = Form(...)):
+    def revoke_key(request: Request, container: str, client_id: str = Form(...)):
         if (r := require_session(request)) is not None:
             return r
         if container not in keys.MANAGEABLE:
@@ -206,17 +212,18 @@ def _register_routes(app: FastAPI) -> None:
         except ContainerNotFound:
             return RedirectResponse(f"/keys/{container}", status_code=303)
         except keys.AWGError as exc:
-            return RedirectResponse(f"/keys/{container}?error={exc}", status_code=303)
+            return RedirectResponse(
+                f"/keys/{container}?error={urllib.parse.quote(str(exc))}", status_code=303)
         return RedirectResponse(f"/keys/{container}", status_code=303)
 
     @app.get("/extras")
-    async def extras_root(request: Request):
+    def extras_root(request: Request):
         if (r := require_session(request)) is not None:
             return r
         return RedirectResponse("/extras/mtproxy", status_code=303)
 
     @app.get("/extras/{service}", response_class=HTMLResponse)
-    async def extras_page(request: Request, service: str):
+    def extras_page(request: Request, service: str):
         if (r := require_session(request)) is not None:
             return r
         if service not in ("mtproxy", "telemt", "dns"):
@@ -237,7 +244,7 @@ def _register_routes(app: FastAPI) -> None:
                       qrs=qrs, endpoint_host=host)
 
     @app.get("/healthz")
-    async def healthz():
+    def healthz():
         return {"ok": True}
 
 

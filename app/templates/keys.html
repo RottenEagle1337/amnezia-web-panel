@@ -53,14 +53,14 @@
       <td class="small">{{ c.created[:10] }}</td>
       <td>
         <span class="badge {{ 'ok' if c.online else '' }}">{{ 'online' if c.online else 'offline' }}</span>
-        {% if c.orphaned %}<span class="badge bad" title="Present in clientsTable but missing from wg0.conf">orphan</span>{% endif %}
+        {% if c.orphaned %}<span class="badge bad" title="Present in clientsTable but missing from the server config">orphan</span>{% endif %}
       </td>
       <td class="mono small">{{ c.endpoint or '—' }}</td>
       <td class="small">{{ c.rx }}</td>
       <td class="small">{{ c.tx }}</td>
       <td class="actions">
         <form method="post" action="/keys/{{ container }}/revoke"
-              onsubmit="return confirmAction('Revoke key &quot;{{ c.name }}&quot;? The client will lose access.')">
+              onsubmit='return confirmAction("Revoke key " + {{ c.name | tojson }} + "? The client will lose access.")'>
           <input type="hidden" name="client_id" value="{{ c.client_id }}">
           <button class="btn danger" type="submit">Revoke</button>
         </form>
