@@ -46,6 +46,12 @@ def create_app() -> FastAPI:
         else:
             raise RuntimeError("PANEL_PASSWORD_HASH is required")
     app.state.auth = Auth(password)
+    # Cache-buster for style.css: browsers cache static aggressively, and after
+    # an update users would otherwise see a stale stylesheet with new markup.
+    try:
+        app.state.static_v = str(int(os.path.getmtime(os.path.join(BASE_DIR, "static", "style.css"))))
+    except OSError:
+        app.state.static_v = "0"
     app.state.templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
     app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
     _register_routes(app)
@@ -77,7 +83,7 @@ def _register_routes(app: FastAPI) -> None:
         return resp
 
     def render(request: Request, page: str, **ctx):
-        return templates.TemplateResponse(request, page, ctx)
+        return templates.TemplateResponse(request, page, {"static_v": app.state.static_v, **ctx})
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request, error: str = ""):
@@ -141,7 +147,13 @@ def _register_routes(app: FastAPI) -> None:
         except ContainerNotFound:
             logs = "container not found"
         except Exception as exc:  # docker API errors — show instead of a bare 500
-            logs = f"error fetching logs: {exc}"
+            if "does not support reading" in str(exc):
+                logs = ("Logs are unavailable: this container runs with the 'none' log driver "
+                        "(the Amnezia app deploys it this way), so Docker keeps no output.\n"
+                        "To enable logs, recreate the container with the json-file driver — "
+                        "containers deployed from this panel (Install page) use it by default.")
+            else:
+                logs = f"error fetching logs: {exc}"
         return render(request, "logs.html", name=name, logs=logs)
 
     @app.get("/keys/{container}", response_class=HTMLResponse)

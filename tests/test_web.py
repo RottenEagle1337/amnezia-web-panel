@@ -170,3 +170,9 @@ def test_config_restore_bad_backup_shows_error():
                data={"backup": "/opt/amnezia/awg/wg0.conf.bak-nope"},
                follow_redirects=False)
     assert "err=" in r.headers["location"]
+
+
+def test_static_cache_bust():
+    c = _client()
+    page = c.get("/").text
+    assert "style.css?v=" in page
