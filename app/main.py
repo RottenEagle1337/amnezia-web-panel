@@ -176,6 +176,9 @@ def _register_routes(app: FastAPI) -> None:
                           placeholder_name="", installed=False, missing=True)
         except keys.AWGError as exc:
             clients, error = [], str(exc)
+        except Exception as exc:
+            # docker API errors (e.g. exec on a stopped container) — page must not 500.
+            clients, error = [], f"{type(exc).__name__}: {exc}"
         proto_info = {}
         try:
             iface = awg.parse_wg_conf(configedit.read_config(backend, container)).interface

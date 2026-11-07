@@ -120,6 +120,42 @@ def _ensure_dir(backend: Backend, container: str, path: str) -> None:
     raise AWGError(f"cannot create {path} in {container}")
 
 
+# The client's images idle on `tail -f /dev/null` until the REAL start script is
+# written to /opt/amnezia/start.sh — mirroring client/server_scripts/awg{,_legacy}.
+AWG_START_SH = '''#!/bin/bash
+echo "Container startup"
+
+# kill daemons in case of restart
+{quick} down {conf}
+
+# start daemons if configured
+if [ -f {conf} ]; then ({quick} up {conf}); fi
+
+# Allow traffic on the TUN interface.
+iptables -A INPUT -i {iface} -j ACCEPT
+iptables -A FORWARD -i {iface} -j ACCEPT
+iptables -A OUTPUT -o {iface} -j ACCEPT
+
+# Allow forwarding traffic only from the VPN.
+iptables -A FORWARD -i {iface} -o eth0 -s {subnet_ip}/{cidr} -j ACCEPT
+iptables -A FORWARD -i {iface} -o eth1 -s {subnet_ip}/{cidr} -j ACCEPT
+
+iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+iptables -t nat -A POSTROUTING -s {subnet_ip}/{cidr} -o eth0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s {subnet_ip}/{cidr} -o eth1 -j MASQUERADE
+
+tail -f /dev/null
+'''
+
+
+def _awg_start_sh(version: str, conf_path: str, subnet: str, iface: str) -> str:
+    quick = "wg-quick" if version == "2.0" else "awg-quick"
+    subnet_ip, cidr = subnet.split("/")
+    return AWG_START_SH.format(quick=quick, conf=conf_path, iface=iface,
+                               subnet_ip=subnet_ip, cidr=cidr)
+
+
 def deploy_awg(backend: Backend, version: str, port: int) -> None:
     """Deploy amnezia-awg (2.0, wg0.conf) or amnezia-awg2 (3.1, awg0.conf)."""
     spec = DEPLOYABLE["awg" if version == "2.0" else "awg2"]
@@ -137,6 +173,9 @@ def deploy_awg(backend: Backend, version: str, port: int) -> None:
     _write(backend, spec.container, "/opt/amnezia/awg/wireguard_server_public_key.key", pub + "\n")
     _write(backend, spec.container, "/opt/amnezia/awg/wireguard_psk.key", crypto.gen_psk() + "\n")
     _write(backend, spec.container, "/opt/amnezia/awg/clientsTable", "[]\n")
+    # The entrypoint idles until the real start script lands — write it, then restart.
+    _write(backend, spec.container, "/opt/amnezia/start.sh",
+           _awg_start_sh(version, spec.conf_path, spec.subnet, spec.iface))
     try:
         backend.connect_network("amnezia-dns-net", spec.container)
     except Exception:
@@ -174,14 +213,53 @@ def deploy_dns(backend: Backend) -> None:
                 pass  # already connected or gone — non-fatal
 
 
-def _wait_file(backend: Backend, container: str, path: str, tries: int = 10) -> bool:
-    """Poll until a file appears inside the container (entrypoints write asynchronously)."""
-    for _ in range(tries):
-        code, _ = backend.exec(container, ["cat", path])
-        if code == 0:
-            return True
-        time.sleep(1)
-    return False
+# Mirrors client/server_scripts/mtproxy/start.sh with values baked in
+# (the client substitutes variables into the script text — no container env).
+MTPROXY_START_SH = '''#!/bin/sh
+
+echo "Container startup"
+
+SECRET=""
+if [ -f /data/secret ]; then
+    SECRET=$(cat /data/secret)
+fi
+
+if [ -z "$SECRET" ]; then
+    echo "ERROR: /data/secret not found — run configure_container first"
+    tail -f /dev/null
+    exit 1
+fi
+
+INTERNAL_IP=$(hostname -i 2>/dev/null | awk '{{print $1}}')
+EXTERNAL_IP=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null)
+[ -z "$EXTERNAL_IP" ] && EXTERNAL_IP=$(curl -s --max-time 5 https://ifconfig.me 2>/dev/null)
+
+NAT_FLAG=""
+NAT_VALUE=""
+if [ -n "$INTERNAL_IP" ] && [ -n "$EXTERNAL_IP" ] && [ "$INTERNAL_IP" != "$EXTERNAL_IP" ]; then
+    NAT_FLAG="--nat-info"
+    NAT_VALUE="${{INTERNAL_IP}}:${{EXTERNAL_IP}}"
+fi
+
+exec mtproto-proxy \\
+    -u root \\
+    -p 2398 \\
+    -H {port} \\
+    -S ${{SECRET}} \\
+    --aes-pwd /data/proxy-secret \\
+    -M 1 \\
+    -C 60000 \\
+    --allow-skip-dh \\
+    ${{NAT_FLAG:+${{NAT_FLAG}} ${{NAT_VALUE}}}} \\
+    {domain_arg} \\
+    /data/proxy-multi.conf
+'''
+
+
+def _run_sh(backend: Backend, container: str, script: str, what: str) -> None:
+    code, out = backend.exec(container, ["sh", "-c", script])
+    if code != 0:
+        raise AWGError(f"{what} failed ({code}): {out.strip()}")
 
 
 def deploy_mtproxy(backend: Backend, port: int, tls_domain: str) -> None:
@@ -192,14 +270,22 @@ def deploy_mtproxy(backend: Backend, port: int, tls_domain: str) -> None:
     backend.pull_image(spec.image)
     backend.run_container(
         spec.container, spec.image,
-        ports={f"{port}/tcp": port},
-        env={"MTPROXY_PORT": str(port), "MTPROXY_TRANSPORT_MODE": "faketls",
-             "MTPROXY_TLS_DOMAIN": tls_domain},
+        ports={f"{port}/tcp": port}, env={},
         volumes={"amnezia-mtproxy-data": {"bind": "/data", "mode": "rw"}})
-    # The image entrypoint generates /data/secret asynchronously; without it the
-    # extras page cannot build connection links, so wait before returning.
-    if not _wait_file(backend, spec.container, "/data/secret"):
-        raise AWGError("mtproxy started but /data/secret did not appear — check container logs")
+    # The image idles on `tail -f /dev/null`; configure it exactly like the client does.
+    _run_sh(backend, spec.container,
+            "curl -s https://core.telegram.org/getProxySecret -o /data/proxy-secret && "
+            "curl -s https://core.telegram.org/getProxyConfig -o /data/proxy-multi.conf",
+            "telegram config download")
+    _write(backend, spec.container, "/data/secret", secrets.token_hex(16) + "\n")
+    _write(backend, spec.container, "/opt/amnezia/start.sh",
+           MTPROXY_START_SH.format(port=port, domain_arg=f"--domain {tls_domain}"))
+    # Deployment state, read back by the panel and by the client's server rescan.
+    _write(backend, spec.container, "/data/mtproxy-meta",
+           f"mode=faketls\ndomain={tls_domain}\ntag=\nadditional=\n"
+           f"workers_mode=\nworkers=1\nnat_enabled=\nnat_internal=\n"
+           f"nat_external=\npublic_host=\n")
+    backend.restart(spec.container)
 
 
 TELEMT_CONFIG = '''show_link = ["tg_main"]

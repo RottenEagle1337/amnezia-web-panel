@@ -271,3 +271,13 @@ def test_deploy_rejects_out_of_range_port():
 
 
 
+
+
+def test_keys_page_survives_backend_exec_error():
+    c = _client()
+    b = c.app.state.backend
+    def boom(container, cmd):
+        raise RuntimeError("Container is not running")  # docker APIError analog
+    b.exec = boom
+    r = c.get("/keys/amnezia-awg")
+    assert r.status_code == 200

@@ -6,7 +6,7 @@ It runs on the same host as the Amnezia containers, inside your local network.
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED)
-![Tests](https://img.shields.io/badge/tests-88%20passed-34d399)
+![Tests](https://img.shields.io/badge/tests-92%20passed-34d399)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
 ## Features
@@ -207,7 +207,7 @@ app/
   crypto.py            WireGuard keys (X25519, pure Python)
   hostinfo.py          server's external view (ipinfo.io over HTTPS, 5 min cache)
   backend/             docker socket (prod) / in-memory mock (development)
-tests/                 pytest: 88 tests
+tests/                 pytest: 92 tests
 docs/research.md       Amnezia formats research (step 1)
 install.sh             one-command server setup
 uninstall.sh/.ps1      full removal scripts

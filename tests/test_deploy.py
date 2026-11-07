@@ -75,7 +75,7 @@ def test_deploy_mtproxy_env_and_volume():
     b.remove_container("amnezia-mtproxy"); b._fs.pop("amnezia-mtproxy", None)
     deploy.deploy_mtproxy(b, 8443, "googletagmanager.com")
     run = b.ran[0]
-    assert run["env"]["MTPROXY_TRANSPORT_MODE"] == "faketls"
+    assert run["env"] == {}  # the client passes no env — values are baked into start.sh
     assert run["volumes"]["amnezia-mtproxy-data"]["bind"] == "/data"
 
 
@@ -109,3 +109,35 @@ def test_deploy_rejects_invalid_tls_domain():
         else:
             raise AssertionError(f"accepted bad domain: {bad!r}")
     assert not b.ran  # nothing was started
+
+
+def test_deploy_awg2_writes_real_start_sh():
+    b = MockBackend()
+    b.remove_container("amnezia-awg2"); b._fs.pop("amnezia-awg2", None)
+    deploy.deploy_awg(b, "3.1", 51821)
+    sh = b._fs["amnezia-awg2"]["/opt/amnezia/start.sh"]
+    assert "awg-quick up /opt/amnezia/awg/awg0.conf" in sh
+    assert "10.9.9.0/24" in sh
+
+
+def test_deploy_awg_legacy_start_sh_uses_wg0():
+    b = MockBackend()
+    b.remove_container("amnezia-awg"); b._fs.pop("amnezia-awg", None)
+    deploy.deploy_awg(b, "2.0", 51820)
+    sh = b._fs["amnezia-awg"]["/opt/amnezia/start.sh"]
+    assert "wg-quick up /opt/amnezia/awg/wg0.conf" in sh
+
+
+def test_deploy_mtproxy_configures_container_like_client():
+    import re as _re
+    b = MockBackend()
+    b.remove_container("amnezia-mtproxy"); b._fs.pop("amnezia-mtproxy", None)
+    deploy.deploy_mtproxy(b, 8443, "googletagmanager.com")
+    fs = b._fs["amnezia-mtproxy"]
+    assert _re.fullmatch(r"[0-9a-f]{32}\n?", fs["/data/secret"])
+    sh = fs["/opt/amnezia/start.sh"]
+    assert "mtproto-proxy" in sh and "--domain googletagmanager.com" in sh
+    meta = fs["/data/mtproxy-meta"]
+    assert "mode=faketls" in meta and "domain=googletagmanager.com" in meta
+    assert b.ran[0]["env"] == {}  # the client bakes values into start.sh, no env
+    assert b.restarted == ["amnezia-mtproxy"]

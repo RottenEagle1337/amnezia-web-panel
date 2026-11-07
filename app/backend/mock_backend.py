@@ -150,6 +150,7 @@ class MockBackend:
             },
             "amnezia-mtproxy": {
                 "/data/secret": MTPROXY_SECRET,
+                "/data/mtproxy-meta": "mode=faketls\ndomain=googletagmanager.com\n",
             },
             "amnezia-telemt": {
                 "/data/config.toml": TELEMT_CONFIG,
@@ -232,6 +233,11 @@ class MockBackend:
         if "syncconf" in joined:
             self.synced.append(container)
             return 0, ""
+        if cmd[:2] == ["sh", "-c"] and "curl -s" in cmd[2] and " -o " in cmd[2]:
+            # File downloads (Telegram proxy config) — record empty files.
+            for target in cmd[2].split(" -o ")[1:]:
+                files[target.split()[0]] = ""
+            return 0, ""
         if cmd[:2] == ["sh", "-c"] and "| base64 -d >" in cmd[2]:
             b64, path = cmd[2].split("| base64 -d >", 1)
             b64 = b64.replace("echo", "").strip()
@@ -268,9 +274,6 @@ class MockBackend:
         self._fs.setdefault(name, {})
         self._inspect.setdefault(name, {"env": dict(env), "ports": dict(ports),
                                         "networks": {"bridge": {"ip": "172.17.0.7"}}})
-        # The real mtproxy entrypoint generates /data/secret on first start.
-        if image.startswith("amneziavpn/mtproxy"):
-            self._fs[name].setdefault("/data/secret", "ab" * 16 + "\n")
 
     def remove_container(self, name: str, remove_volumes: bool = False) -> None:
         self.removed.append((name, remove_volumes))
