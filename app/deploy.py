@@ -176,6 +176,11 @@ def deploy_awg(backend: Backend, version: str, port: int) -> None:
     # The entrypoint idles until the real start script lands — write it, then restart.
     _write(backend, spec.container, "/opt/amnezia/start.sh",
            _awg_start_sh(version, spec.conf_path, spec.subnet, spec.iface))
+    # ENTRYPOINT execs the script directly: a freshly written file is 0644,
+    # without +x the container crash-loops on "permission denied".
+    code, out = backend.exec(spec.container, ["chmod", "+x", "/opt/amnezia/start.sh"])
+    if code != 0:
+        raise AWGError(f"chmod start.sh failed ({code}): {out.strip()}")
     try:
         backend.connect_network("amnezia-dns-net", spec.container)
     except Exception:

@@ -141,3 +141,11 @@ def test_deploy_mtproxy_configures_container_like_client():
     assert "mode=faketls" in meta and "domain=googletagmanager.com" in meta
     assert b.ran[0]["env"] == {}  # the client bakes values into start.sh, no env
     assert b.restarted == ["amnezia-mtproxy"]
+
+
+def test_deploy_awg_makes_start_sh_executable():
+    b = MockBackend()
+    b.remove_container("amnezia-awg2"); b._fs.pop("amnezia-awg2", None)
+    deploy.deploy_awg(b, "3.1", 51821)
+    # The image entrypoint execs /opt/amnezia/start.sh directly — no +x, no boot.
+    assert "/opt/amnezia/start.sh" in b.chmodded

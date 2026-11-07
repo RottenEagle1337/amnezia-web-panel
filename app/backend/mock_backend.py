@@ -209,6 +209,7 @@ class MockBackend:
         self.networks_created: list[tuple[str, str]] = []
         self.network_connects: list[tuple[str, str, str]] = []
         self.built: list[str] = []
+        self.chmodded: list[str] = []
 
     def list_services(self) -> list[ServiceInfo]:
         return copy.deepcopy(self._services)
@@ -248,6 +249,9 @@ class MockBackend:
             hits = sorted(p for p in files if p.startswith(prefix))
             return (0, "\n".join(hits) + "\n") if hits else (1, "")
         if cmd[:2] == ["mkdir", "-p"]:
+            return 0, ""
+        if cmd[:2] == ["chmod", "+x"]:
+            self.chmodded.append(cmd[2])
             return 0, ""
         return 1, f"mock: unsupported command: {joined}"
 
