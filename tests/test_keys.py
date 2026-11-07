@@ -97,3 +97,15 @@ def test_create_missing_conf_raises_awgerror():
         assert "Address" in str(exc)
     else:
         raise AssertionError("expected AWGError")
+
+
+def test_syncconf_uses_own_strip_and_per_proto_binary():
+    """No wg-quick on the sync path — host AppArmor can break it (Ubuntu 24.04+)."""
+    b = MockBackend()
+    keys.create_client(b, "amnezia-wireguard", "strip-wg", "1.2.3.4", "51820")
+    assert any("wg syncconf wg0" in c for c in b.exec_calls)
+    assert not any("wg-quick" in c for c in b.exec_calls)
+    assert "/tmp/.syncconf-strip" not in b._fs["amnezia-wireguard"]
+    keys.create_client(b, "amnezia-awg2", "strip-awg", "1.2.3.4", "51821")
+    assert any("awg syncconf awg0" in c for c in b.exec_calls)
+    assert not any("awg-quick" in c for c in b.exec_calls)

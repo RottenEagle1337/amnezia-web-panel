@@ -170,3 +170,21 @@ def human_bytes(n: int) -> str:
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
         n /= 1024
     return f"{n} B"
+
+
+# Keys wg-quick strip drops — local-only, the kernel must never see them.
+_STRIP_DROP = {"Address", "DNS", "DNSSearch", "MTU", "Table",
+               "PreUp", "PostUp", "PreDown", "PostDown", "SaveConfig"}
+
+
+def strip_for_syncconf(conf_text: str) -> str:
+    """Own implementation of `wg-quick strip`: keeps crypto keys (incl. AWG
+    obfuscation), drops local-only keys. Used instead of wg-quick because host
+    AppArmor profiles (Ubuntu 24.04+) can break wg-quick inside containers."""
+    out = []
+    for line in conf_text.splitlines():
+        key = line.split("=", 1)[0].strip()
+        if key in _STRIP_DROP:
+            continue
+        out.append(line)
+    return "\n".join(out).strip() + "\n"

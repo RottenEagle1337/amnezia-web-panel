@@ -229,6 +229,7 @@ class MockBackend:
         self.network_connects: list[tuple[str, str, str]] = []
         self.built: list[str] = []
         self.chmodded: list[str] = []
+        self.exec_calls: list[str] = []
 
     def list_services(self) -> list[ServiceInfo]:
         return copy.deepcopy(self._services)
@@ -238,6 +239,7 @@ class MockBackend:
         if files is None:
             raise ContainerNotFound(container)
         joined = " ".join(cmd)
+        self.exec_calls.append(joined)
 
         if cmd[:1] == ["cat"] and len(cmd) == 2:
             path = cmd[1]
@@ -250,7 +252,7 @@ class MockBackend:
             return 0, _fake_key() + "\n"
         if cmd[:3] == ["wg", "show", "all"]:
             return 0, self._dumps[container]
-        if "syncconf" in joined:
+        if len(cmd) >= 2 and cmd[1] == "syncconf":
             self.synced.append(container)
             return 0, ""
         if cmd[:2] == ["sh", "-c"] and "curl -s" in cmd[2] and " -o " in cmd[2]:
@@ -271,6 +273,9 @@ class MockBackend:
             return 0, ""
         if cmd[:2] == ["chmod", "+x"]:
             self.chmodded.append(cmd[2])
+            return 0, ""
+        if cmd[:2] == ["rm", "-f"]:
+            files.pop(cmd[2], None)
             return 0, ""
         return 1, f"mock: unsupported command: {joined}"
 

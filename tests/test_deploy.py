@@ -151,5 +151,20 @@ def test_deploy_wireguard_builds_image_and_writes_start_sh():
     conf = b._fs["amnezia-wireguard"]["/opt/amnezia/wireguard/wg0.conf"]
     assert "ListenPort = 51820" in conf and "Jc" not in conf  # classic wg: no obfuscation
     sh = b._fs["amnezia-wireguard"]["/opt/amnezia/start.sh"]
-    assert "wg-quick up /opt/amnezia/wireguard/wg0.conf" in sh
+    assert "CONF=/opt/amnezia/wireguard/wg0.conf" in sh and 'wg-quick up "$CONF"' in sh
     assert "/opt/amnezia/start.sh" in b.chmodded
+
+
+def test_deploy_wireguard_start_sh_has_wg_quick_fallback():
+    """Ubuntu 24.04+ AppArmor can break wg-quick in containers — direct ip/wg fallback."""
+    from app import deploy
+    b = MockBackend()
+    b.remove_container("amnezia-wireguard"); b._fs.pop("amnezia-wireguard", None)
+    deploy.deploy_wg(b, 51820)
+    sh = b._fs["amnezia-wireguard"]["/opt/amnezia/start.sh"]
+    assert "wg-quick up" in sh
+    assert "wg setconf" in sh and "ip link add" in sh
+    # awg2 is unaffected (awg-quick is not covered by the host profile)
+    b.remove_container("amnezia-awg2"); b._fs.pop("amnezia-awg2", None)
+    deploy.deploy_awg(b, "3.1", 51821)
+    assert "wg setconf" not in b._fs["amnezia-awg2"]["/opt/amnezia/start.sh"]

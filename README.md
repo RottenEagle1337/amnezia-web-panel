@@ -6,7 +6,7 @@ It runs on the same host as the Amnezia containers, inside your local network.
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED)
-![Tests](https://img.shields.io/badge/tests-95%20passed-34d399)
+![Tests](https://img.shields.io/badge/tests-98%20passed-34d399)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
 ## Features
@@ -190,6 +190,21 @@ the live config (`wg0.conf` / `awg0.conf`, Telemt `config.toml`).
 - Sessions: HMAC cookie (12 h, httponly, samesite=lax), reset on panel restart.
 - Optional hardening: [tecnativa/docker-socket-proxy](https://github.com/tecnativa/docker-socket-proxy) with an API whitelist.
 
+## Troubleshooting
+
+**`readlink: Permission denied` / `Unable to modify interface: No such device`
+when issuing a WireGuard key.** On Ubuntu 24.04+ the host ships an AppArmor
+profile named `wg-quick` that also confines `wg-quick` *inside containers*,
+breaking it ([Ubuntu bug #2123870](https://bugs.launchpad.net/bugs/2123870)).
+The panel works around it (own `strip` for `syncconf`, direct `ip`/`wg`
+fallback in the container's start.sh), but the cleanest fix is on the host —
+it also unbreaks the official client:
+
+```bash
+sudo apt install -y apparmor-utils && sudo aa-complain /etc/apparmor.d/wg-quick
+docker restart amnezia-wireguard
+```
+
 ## Project layout
 
 ```
@@ -207,7 +222,7 @@ app/
   crypto.py            WireGuard keys (X25519, pure Python)
   hostinfo.py          server's external view (ipinfo.io over HTTPS, 5 min cache)
   backend/             docker socket (prod) / in-memory mock (development)
-tests/                 pytest: 95 tests
+tests/                 pytest: 98 tests
 docs/research.md       Amnezia formats research (step 1)
 install.sh             one-command server setup
 uninstall.sh/.ps1      full removal scripts

@@ -156,6 +156,57 @@ def _awg_start_sh(version: str, conf_path: str, subnet: str, iface: str) -> str:
                                subnet_ip=subnet_ip, cidr=cidr)
 
 
+# WireGuard start.sh: like AWG_START_SH but with a fallback — host AppArmor
+# (Ubuntu 24.04+, profile "wg-quick") can break wg-quick inside containers with
+# "readlink: Permission denied", leaving the interface down. Fall back to
+# direct ip/wg setup with our own strip (same keys wg-quick strip drops).
+WG_START_SH = '''#!/bin/bash
+echo "Container startup"
+
+CONF={conf}
+IFACE={iface}
+ADDR=$(awk -F' = ' '/^Address/ {{print $2; exit}}' "$CONF" 2>/dev/null)
+
+# kill daemons in case of restart
+wg-quick down "$CONF" 2>/dev/null || ip link del "$IFACE" 2>/dev/null || true
+
+# start daemons if configured
+if [ -f "$CONF" ]; then
+  if ! (wg-quick up "$CONF"); then
+    echo "wg-quick failed (host AppArmor?) - falling back to direct setup"
+    ip link add dev "$IFACE" type wireguard
+    grep -vE '^[[:space:]]*(Address|DNS|DNSSearch|MTU|Table|PreUp|PostUp|PreDown|PostDown|SaveConfig)[[:space:]]*=' "$CONF" > /tmp/.wg0.stripped
+    wg setconf "$IFACE" /tmp/.wg0.stripped
+    rm -f /tmp/.wg0.stripped
+    ip addr replace "$ADDR" dev "$IFACE"
+    ip link set mtu 1420 up dev "$IFACE"
+  fi
+fi
+
+# Allow traffic on the TUN interface.
+iptables -A INPUT -i {iface} -j ACCEPT
+iptables -A FORWARD -i {iface} -j ACCEPT
+iptables -A OUTPUT -o {iface} -j ACCEPT
+
+# Allow forwarding traffic only from the VPN.
+iptables -A FORWARD -i {iface} -o eth0 -s {subnet_ip}/{cidr} -j ACCEPT
+iptables -A FORWARD -i {iface} -o eth1 -s {subnet_ip}/{cidr} -j ACCEPT
+
+iptables -A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+iptables -t nat -A POSTROUTING -s {subnet_ip}/{cidr} -o eth0 -j MASQUERADE
+iptables -t nat -A POSTROUTING -s {subnet_ip}/{cidr} -o eth1 -j MASQUERADE
+
+tail -f /dev/null
+'''
+
+
+def _wg_start_sh(conf_path: str, subnet: str, iface: str) -> str:
+    subnet_ip, cidr = subnet.split("/")
+    return WG_START_SH.format(conf=conf_path, iface=iface,
+                              subnet_ip=subnet_ip, cidr=cidr)
+
+
 def _wg_conf(port: int, subnet: str) -> tuple[str, str]:
     """Classic WireGuard server config — no obfuscation params."""
     priv = crypto.gen_private_key()
@@ -186,7 +237,7 @@ def deploy_wg(backend: Backend, port: int) -> None:
     # The entrypoint idles until the real start script lands — write it (exec'd
     # directly by dumb-init, so chmod +x or the container crash-loops).
     _write(backend, spec.container, "/opt/amnezia/start.sh",
-           _awg_start_sh("2.0", spec.conf_path, spec.subnet, spec.iface))
+           _wg_start_sh(spec.conf_path, spec.subnet, spec.iface))
     code, out = backend.exec(spec.container, ["chmod", "+x", "/opt/amnezia/start.sh"])
     if code != 0:
         raise AWGError(f"chmod start.sh failed ({code}): {out.strip()}")

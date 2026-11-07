@@ -20,12 +20,12 @@ MANAGEABLE = ("amnezia-wireguard", "amnezia-awg2")
 # Per-container layout: config file, interface name, clients table, server keys.
 LAYOUTS = {
     "amnezia-wireguard": {
-        "conf": f"{WG_DIR}/wg0.conf", "iface": "wg0",
+        "conf": f"{WG_DIR}/wg0.conf", "iface": "wg0", "bin": "wg",
         "table": f"{WG_DIR}/clientsTable",
         "server_pub": f"{WG_DIR}/wireguard_server_public_key.key",
     },
     "amnezia-awg2": {
-        "conf": f"{AWG_DIR}/awg0.conf", "iface": "awg0",
+        "conf": f"{AWG_DIR}/awg0.conf", "iface": "awg0", "bin": "awg",
         "table": f"{AWG_DIR}/clientsTable",
         "server_pub": f"{AWG_DIR}/wireguard_server_public_key.key",
     },
@@ -78,10 +78,20 @@ def _write(backend: Backend, container: str, path: str, content: str) -> None:
     _run(backend, container, ["sh", "-c", f"echo {b64} | base64 -d > {path}"])
 
 
+_STRIP_TMP = "/tmp/.syncconf-strip"
+
+
 def _syncconf(backend: Backend, container: str) -> None:
+    """Apply the conf to the live interface. Uses our own strip instead of
+    `wg-quick strip` — host AppArmor profiles (Ubuntu 24.04+) can break
+    wg-quick inside containers, and a failed strip kills key issue."""
     lay = _layout(container)
-    _run(backend, container,
-         ["bash", "-c", f"wg syncconf {lay['iface']} <(wg-quick strip {lay['conf']})"])
+    stripped = awg.strip_for_syncconf(_read(backend, container, lay["conf"]))
+    _write(backend, container, _STRIP_TMP, stripped)
+    try:
+        _run(backend, container, [lay["bin"], "syncconf", lay["iface"], _STRIP_TMP])
+    finally:
+        backend.exec(container, ["rm", "-f", _STRIP_TMP])
 
 
 def _load(backend: Backend, container: str) -> tuple[awg.ServerConfig, list[dict]]:

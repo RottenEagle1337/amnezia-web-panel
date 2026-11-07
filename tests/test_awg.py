@@ -63,3 +63,12 @@ def test_x25519_matches_wireguard_test_vector():
     assert crypto.public_key(priv) == pub
     other = crypto.public_key(crypto.gen_private_key())
     assert other != pub
+
+
+def test_strip_for_syncconf():
+    stripped = awg.strip_for_syncconf(WG0_CONF_AWG)
+    # wg-quick strip semantics: local-only keys out, crypto keys stay
+    for gone in ("Address", "DNS", "MTU", "PostUp", "PostDown", "SaveConfig"):
+        assert not any(l.startswith(gone) for l in stripped.splitlines()), gone
+    for keep in ("PrivateKey", "ListenPort", "Jc = 3", "PublicKey", "PresharedKey", "AllowedIPs"):
+        assert keep in stripped, keep
