@@ -55,7 +55,10 @@ def _running(backend: Backend, name: str) -> bool:
 
 
 def _read_file(backend: Backend, container: str, path: str) -> str:
-    code, out = backend.exec(container, ["cat", path])
+    try:
+        code, out = backend.exec(container, ["cat", path])
+    except ContainerNotFound:
+        return ""
     return out if code == 0 else ""
 
 
@@ -94,7 +97,8 @@ def telemt_info(backend: Backend, endpoint_host: str) -> ProxyInfo:
     except ContainerNotFound:
         return info
     info.port = next(iter(meta["ports"].values()), "")
-    raw = _read_file(backend, TELEMT_CONTAINER, TELEMT_CONFIG_PATH)
+    raw = _read_file(backend, TELEMT_CONTAINER, "/etc/telemt/config.toml") or \
+        _read_file(backend, TELEMT_CONTAINER, TELEMT_CONFIG_PATH)
     if not raw:
         return info
     try:

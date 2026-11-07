@@ -157,6 +157,15 @@ class MockBackend:
             "amnezia-dns": {},
         }
         self._inspect = {
+            # Pre-seeded containers mimic a client deploy: log driver "none".
+            "amnezia-awg": {
+                "env": {}, "ports": {"51820/udp": "51820"},
+                "networks": {"bridge": {"ip": "172.17.0.2"}},
+            },
+            "amnezia-awg2": {
+                "env": {}, "ports": {"51821/udp": "51821"},
+                "networks": {"bridge": {"ip": "172.17.0.3"}},
+            },
             "amnezia-mtproxy": {
                 "env": {"MTPROXY_TRANSPORT_MODE": "faketls", "MTPROXY_TLS_DOMAIN": "googletagmanager.com",
                         "MTPROXY_PORT": "8443"},
@@ -192,6 +201,13 @@ class MockBackend:
         ]
         self.restarted: list[str] = []
         self.synced: list[str] = []
+        # Deployment operation records (Phase C).
+        self.pulled: list[str] = []
+        self.ran: list[dict] = []
+        self.removed: list[tuple[str, bool]] = []
+        self.networks_created: list[tuple[str, str]] = []
+        self.network_connects: list[tuple[str, str, str]] = []
+        self.built: list[str] = []
 
     def list_services(self) -> list[ServiceInfo]:
         return copy.deepcopy(self._services)
@@ -225,6 +241,8 @@ class MockBackend:
             prefix = cmd[2].split("ls -1 ", 1)[1].split(" 2>/dev/null")[0].rstrip("*")
             hits = sorted(p for p in files if p.startswith(prefix))
             return (0, "\n".join(hits) + "\n") if hits else (1, "")
+        if cmd[:2] == ["mkdir", "-p"]:
+            return 0, ""
         return 1, f"mock: unsupported command: {joined}"
 
     def restart(self, container: str) -> None:
@@ -232,12 +250,48 @@ class MockBackend:
             raise ContainerNotFound(container)
         self.restarted.append(container)
 
+    # --- Deployment operations (record-only) ---
+
+    def pull_image(self, image: str) -> str:
+        self.pulled.append(image)
+        return image
+
+    def run_container(self, name, image, *, ports, env, volumes, privileged=False,
+                      cap_add=(), sysctls=None, ulimits=None, restart_always=True):
+        self.ran.append({"name": name, "image": image, "ports": ports, "env": env,
+                         "volumes": volumes, "privileged": privileged,
+                         "cap_add": list(cap_add), "sysctls": sysctls or {}})
+        if not any(s.name == name for s in self._services):
+            self._services.append(ServiceInfo(name, "running", image,
+                                              datetime.now(timezone.utc).isoformat(),
+                                              ", ".join(f"{k}->{v}" for k, v in ports.items())))
+        self._fs.setdefault(name, {})
+        self._inspect.setdefault(name, {"env": dict(env), "ports": dict(ports),
+                                        "networks": {"bridge": {"ip": "172.17.0.7"}}})
+        # The real mtproxy entrypoint generates /data/secret on first start.
+        if image.startswith("amneziavpn/mtproxy"):
+            self._fs[name].setdefault("/data/secret", "ab" * 16 + "\n")
+
+    def remove_container(self, name: str, remove_volumes: bool = False) -> None:
+        self.removed.append((name, remove_volumes))
+        self._services = [s for s in self._services if s.name != name]
+        self._fs.pop(name, None)
+        self._inspect.pop(name, None)
+
+    def ensure_network(self, name: str, subnet: str) -> None:
+        # Record-only: the mock does not model pre-existing networks.
+        self.networks_created.append((name, subnet))
+
+    def connect_network(self, network: str, container: str, ip: str = "") -> None:
+        self.network_connects.append((network, container, ip))
+
+    def build_image(self, tag: str, dockerfile_text: str) -> None:
+        self.built.append(tag)
+
+    def image_exists(self, image: str) -> bool:
+        return image in self.pulled or image in self.built
+
     def inspect(self, container: str) -> dict:
         if container not in self._inspect:
             raise ContainerNotFound(container)
         return copy.deepcopy(self._inspect[container])
-
-    def logs(self, container: str, tail: int = 200) -> str:
-        if container not in {s.name for s in self._services}:
-            raise ContainerNotFound(container)
-        return "\n".join(f"2026-11-05T20:0{i % 10}: mock log line {i} for {container}" for i in range(min(tail, 20)))

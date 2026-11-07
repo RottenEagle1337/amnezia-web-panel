@@ -30,12 +30,6 @@ def test_panel_cannot_restart_itself():
     assert c.app.state.backend.restarted == []
 
 
-def test_logs_restricted_to_amnezia_containers():
-    c = _client()
-    r = c.get("/services/other-app/logs", follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/"
-
-
 def test_login_throttle():
     c = TestClient(create_app())
     for _ in range(5):

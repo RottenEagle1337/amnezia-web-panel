@@ -61,8 +61,17 @@ input[type=text], input[type=password], input[type=number], textarea, select {
   background: #101216; border: 1px solid var(--border); border-radius: 10px;
   color: var(--text); padding: 9px 12px; font: inherit; }
 input:focus, textarea:focus { outline: none; border-color: var(--accent-2); }
-.inline-form { display: flex; gap: 10px; }
-.inline-form input { flex: 1; }
+.inline-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.inline-form input[type=text], .inline-form input[type=password] { flex: 1; min-width: 0; }
+.inline-form input[type=number] { flex: 0 0 auto; }
+.inline-form label.check { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto;
+                           padding: 8px 16px; border: 1px solid var(--border); border-radius: 10px;
+                           background: var(--card-2); color: var(--text); font: inherit; font-weight: 500;
+                           cursor: pointer; user-select: none; }
+.inline-form label.check:hover { border-color: rgba(255,255,255,.2); }
+.inline-form label.check:has(input[type=checkbox]:checked) { border-color: var(--accent-2); }
+.inline-form label.check input[type=checkbox] { width: 16px; height: 16px; margin: 0;
+                                                accent-color: var(--accent-2); cursor: pointer; }
 textarea.code { width: 100%; min-height: 320px; font-family: ui-monospace, Menlo, monospace;
                 font-size: 13px; line-height: 1.55; }
 /* misc */
@@ -70,6 +79,7 @@ textarea.code { width: 100%; min-height: 320px; font-family: ui-monospace, Menlo
 .small { font-size: 12.5px; } .big { font-size: 20px; }
 .hint { color: var(--muted); font-size: 13px; }
 .error { color: var(--danger); } .warn { color: var(--accent); }
+.ok-msg { color: var(--ok, #34d399); }
 .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
 .stat { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
 .stat .num { font-size: 24px; font-weight: 700; } .stat .num.ok { color: var(--ok); } .stat .num.bad { color: var(--danger); }

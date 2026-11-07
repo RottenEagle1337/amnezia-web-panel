@@ -9,6 +9,38 @@
   <a class="pill {{ 'active' if service == 'dns' }}" href="/extras/dns">AmneziaDNS</a>
 </div>
 
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if done %}<p class="ok-msg">{{ done }}</p>{% endif %}
+
+{% if installed %}
+<div class="card">
+  <h2>Remove</h2>
+  <form method="post" action="/deploy/{{ dkey }}/remove" class="inline-form"
+        onsubmit='return confirmAction("Remove {{ dspec.container }}? Clients using it will lose access.")'>
+    <input type="hidden" name="next" value="/extras/{{ service }}">
+    <label class="check"><input type="checkbox" name="wipe_data" value="1"> wipe data volumes</label>
+    <button class="btn danger" type="submit">Remove</button>
+  </form>
+</div>
+{% else %}
+<div class="card">
+  <h2>Install</h2>
+  <form method="post" action="/deploy/{{ dkey }}" class="inline-form">
+    <input type="hidden" name="next" value="/extras/{{ service }}">
+    {% if dspec.proto %}
+    <input type="number" name="port" value="{{ dspec.default_port }}" min="1" max="65535" style="width:110px">
+    {% endif %}
+    {% if dspec.needs_domain %}
+    <input type="text" name="tls_domain" placeholder="Masking domain (e.g. github.com)" maxlength="253" required>
+    {% endif %}
+    <button class="btn primary" type="submit">Install</button>
+  </form>
+  {% if dspec.needs_domain %}
+  <p class="hint">FakeTLS masks traffic as TLS to this domain. Pick a popular HTTPS site.</p>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if proxy %}
 <div class="card">
   <h2>{{ 'MTProxy' if proxy.kind == 'mtproxy' else 'Telemt' }}

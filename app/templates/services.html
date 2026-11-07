@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Services — Amnezia Panel{% endblock %}
+{% block title %}Info — Amnezia Panel{% endblock %}
 {% block content %}
-<h1>Services</h1>
+<h1>Info</h1>
 {% if not endpoint_host %}
 <p class="warn">AWG_ENDPOINT_HOST is not set — client configs will have no server address. Set it in .env.</p>
 {% endif %}
@@ -42,7 +42,6 @@
       <td class="mono small">{{ s.ports }}</td>
       <td class="small">{{ s.started_at[:19].replace('T', ' ') if s.started_at else '—' }}</td>
       <td class="actions">
-        <a class="btn" href="/services/{{ s.name }}/logs">Logs</a>
         {% if s.name in config_specs %}
         <a class="btn" href="/config/{{ s.name }}">Config</a>
         {% endif %}
