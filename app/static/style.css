@@ -74,6 +74,15 @@ input:focus, textarea:focus { outline: none; border-color: var(--accent-2); }
                                                 accent-color: var(--accent-2); cursor: pointer; }
 textarea.code { width: 100%; min-height: 320px; font-family: ui-monospace, Menlo, monospace;
                 font-size: 13px; line-height: 1.55; }
+/* loading overlay for long-running actions */
+#loading-overlay { position: fixed; inset: 0; background: rgba(10,11,14,.82); z-index: 100;
+                   display: flex; flex-direction: column; align-items: center; justify-content: center;
+                   gap: 14px; color: var(--text); font-weight: 500; }
+#loading-overlay[hidden] { display: none; }
+.spinner { width: 42px; height: 42px; border-radius: 50%;
+           border: 3px solid var(--border); border-top-color: var(--accent-2);
+           animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 /* misc */
 .mono { font-family: ui-monospace, Menlo, monospace; }
 .small { font-size: 12.5px; } .big { font-size: 20px; }

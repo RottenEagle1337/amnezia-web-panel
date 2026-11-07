@@ -15,7 +15,7 @@
 {% if installed %}
 <div class="card">
   <h2>Remove</h2>
-  <form method="post" action="/deploy/{{ dkey }}/remove" class="inline-form"
+  <form method="post" action="/deploy/{{ dkey }}/remove" class="inline-form" data-loading
         onsubmit='return confirmAction("Remove {{ dspec.container }}? Clients using it will lose access.")'>
     <input type="hidden" name="next" value="/extras/{{ service }}">
     <label class="check"><input type="checkbox" name="wipe_data" value="1"> wipe data volumes</label>
@@ -25,7 +25,7 @@
 {% else %}
 <div class="card">
   <h2>Install</h2>
-  <form method="post" action="/deploy/{{ dkey }}" class="inline-form">
+  <form method="post" action="/deploy/{{ dkey }}" class="inline-form" data-loading>
     <input type="hidden" name="next" value="/extras/{{ service }}">
     {% if dspec.proto %}
     <input type="number" name="port" value="{{ dspec.default_port }}" min="1" max="65535" style="width:110px">

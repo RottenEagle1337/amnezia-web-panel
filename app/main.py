@@ -337,8 +337,10 @@ def _register_routes(app: FastAPI) -> None:
         if spec.needs_domain and not tls_domain.strip():
             return RedirectResponse(f"{dest}?error={key} needs a masking domain", status_code=303)
         try:
-            if key in ("awg", "awg2"):
+            if key == "awg2":
                 deploy_mod.deploy_awg(app.state.backend, spec.version, port)
+            elif key == "wireguard":
+                deploy_mod.deploy_wg(app.state.backend, port)
             elif key == "dns":
                 deploy_mod.deploy_dns(app.state.backend)
             elif key == "mtproxy":

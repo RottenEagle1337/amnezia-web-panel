@@ -19,9 +19,9 @@ def test_restart_restricted_to_amnezia_containers():
     assert r.status_code == 303
     assert c.app.state.backend.restarted == []
     # an amnezia container is allowed
-    r = c.post("/services/amnezia-awg/restart", follow_redirects=False)
+    r = c.post("/services/amnezia-wireguard/restart", follow_redirects=False)
     assert r.status_code == 303
-    assert c.app.state.backend.restarted == ["amnezia-awg"]
+    assert c.app.state.backend.restarted == ["amnezia-wireguard"]
 
 
 def test_panel_cannot_restart_itself():
@@ -50,10 +50,10 @@ def test_security_headers():
 
 def test_client_name_rejects_control_chars():
     c = _client()
-    r = c.post("/keys/amnezia-awg/create", data={"name": "bad\nname"}, follow_redirects=False)
+    r = c.post("/keys/amnezia-wireguard/create", data={"name": "bad\nname"}, follow_redirects=False)
     assert r.status_code == 303
     assert "error=" in r.headers["location"]
-    page = c.get("/keys/amnezia-awg").text
+    page = c.get("/keys/amnezia-wireguard").text
     assert "bad\nname" not in page
 
 
@@ -71,17 +71,17 @@ def test_client_name_with_quotes_no_js_breakout():
     """Quotes in a client name must not break out of the onsubmit JS string."""
     c = _client()
     evil = "x');alert(1)//"
-    r = c.post("/keys/amnezia-awg/create", data={"name": evil}, follow_redirects=False)
+    r = c.post("/keys/amnezia-wireguard/create", data={"name": evil}, follow_redirects=False)
     assert r.status_code == 200  # one-time "Key issued" page
-    page = c.get("/keys/amnezia-awg").text
+    page = c.get("/keys/amnezia-wireguard").text
     # the name must only appear HTML/JS-escaped, never raw inside onsubmit
     assert "x');alert(1)//" not in page
     assert "alert(1)" not in page or "\\u0027" in page or "&#39;" in page
     # cleanup
     import json as _json
-    table = _json.loads(c.app.state.backend._fs["amnezia-awg"]["/opt/amnezia/awg/clientsTable"])
+    table = _json.loads(c.app.state.backend._fs["amnezia-wireguard"]["/opt/amnezia/wireguard/clientsTable"])
     cid = [e["clientId"] for e in table if e["userData"]["clientName"] == evil][0]
-    c.post("/keys/amnezia-awg/revoke", data={"client_id": cid}, follow_redirects=False)
+    c.post("/keys/amnezia-wireguard/revoke", data={"client_id": cid}, follow_redirects=False)
 
 
 def test_logout_invalidates_token_server_side():

@@ -6,20 +6,20 @@ It runs on the same host as the Amnezia containers, inside your local network.
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED)
-![Tests](https://img.shields.io/badge/tests-93%20passed-34d399)
+![Tests](https://img.shields.io/badge/tests-95%20passed-34d399)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
 
 ## Features
 
 - **Info** — all `amnezia-*` containers: status, image, ports, uptime, restart.
   A "server as seen from outside" card: public IP, country, ISP, AS, address type.
-- **AmneziaWG 2.0 / 3.1 keys** — issue, revoke, list clients (IP, online, endpoint, traffic).
+- **WireGuard / AmneziaWG 3.1 keys** — issue, revoke, list clients (IP, online, endpoint, traffic).
   The config is shown **once**: a `vpn://` key with an animated multi-frame QR
   (same as the official app) and a `.conf` for AmneziaWG/WireGuard. Xray and OpenVPN
   are placeholders for now.
 - **Proxy & DNS** — MTProxy and Telemt: mode, masking domain, `tg://` / `t.me` links
   with QR codes. AmneziaDNS: resolver network and IP.
-- **One-click deploy** — install and removal of AmneziaWG 2.0/3.1, AmneziaDNS,
+- **One-click deploy** — install and removal of WireGuard, AmneziaWG 3.1, AmneziaDNS,
   MTProxy and Telemt right on their pages (see [Deploying protocols](#deploying-protocols)).
 - **Config editor** — edit server configs from the browser with validation,
   automatic backups and restore (see [Config editor](#config-editor)).
@@ -158,7 +158,7 @@ installed from the panel are discovered by the Amnezia app (and vice versa).
 
 | Service | Container | Default port | Notes |
 |---|---|---|---|
-| AmneziaWG 2.0 | `amnezia-awg` | 51820/udp | `wg0.conf`, per-install random obfuscation |
+| WireGuard | `amnezia-wireguard` | 51820/udp | `wg0.conf`, image built locally from the vendored Dockerfile (not pulled) |
 | AmneziaWG 3.1 | `amnezia-awg2` | 51821/udp | `awg0.conf`, AWG 3.1 extra obfuscation params |
 | AmneziaDNS | `amnezia-dns` | — | unbound on `amnezia-dns-net` (172.29.172.254) |
 | MTProxy | `amnezia-mtproxy` | 8443/tcp | FakeTLS, requires a masking domain |
@@ -207,7 +207,7 @@ app/
   crypto.py            WireGuard keys (X25519, pure Python)
   hostinfo.py          server's external view (ipinfo.io over HTTPS, 5 min cache)
   backend/             docker socket (prod) / in-memory mock (development)
-tests/                 pytest: 93 tests
+tests/                 pytest: 95 tests
 docs/research.md       Amnezia formats research (step 1)
 install.sh             one-command server setup
 uninstall.sh/.ps1      full removal scripts

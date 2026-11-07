@@ -13,6 +13,25 @@ from datetime import datetime, timedelta, timezone
 
 from .base import ContainerNotFound, ServiceInfo
 
+# Classic WireGuard: no AWG obfuscation fields.
+WG0_CONF_WG = """[Interface]
+PrivateKey = aNk1f4EW1RfR0c9l0n6W3u0m0y6p9dYf8y3oF8xVq2E=
+Address = 10.8.1.1/24
+ListenPort = 51820
+PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+[Peer]
+PublicKey = XkN3v7mQ2pL8sR4tY6uI9oP1aS5dF7gH0jK3lZ8cV0nE=
+PresharedKey = mP9qW2eR5tY8uI1oP4aS7dF0gH3jK6lZ9cV2bN5mQ8wE=
+AllowedIPs = 10.8.1.2/32
+
+[Peer]
+PublicKey = bN5mQ8wE1rT4yU7iO0pA3sD6fG9hJ2kL5zX8cV1bN4mE=
+PresharedKey = qW2eR5tY8uI1oP4aS7dF0gH3jK6lZ9cV2bN5mQ8wE1rT4=
+AllowedIPs = 10.8.1.3/32
+"""
+
 WG0_CONF_AWG = """[Interface]
 PrivateKey = aNk1f4EW1RfR0c9l0n6W3u0m0y6p9dYf8y3oF8xVq2E=
 Address = 10.8.1.1/24
@@ -136,11 +155,11 @@ class MockBackend:
 
     def __init__(self) -> None:
         self._fs: dict[str, dict[str, str]] = {
-            "amnezia-awg": {
-                "/opt/amnezia/awg/wg0.conf": WG0_CONF_AWG,
-                "/opt/amnezia/awg/clientsTable": __import__("json").dumps(CLIENTS_AWG, indent=2),
-                "/opt/amnezia/awg/wireguard_server_public_key.key": "srVpubkeyE1xAmPlE2yAmPlE3yAmPlE4yAmPlE5yA=",
-                "/opt/amnezia/awg/wireguard_psk.key": "pskMockKeyE1xAmPlE2yAmPlE3yAmPlE4yAmPlE5y=",
+            "amnezia-wireguard": {
+                "/opt/amnezia/wireguard/wg0.conf": WG0_CONF_WG,
+                "/opt/amnezia/wireguard/clientsTable": __import__("json").dumps(CLIENTS_AWG, indent=2),
+                "/opt/amnezia/wireguard/wireguard_server_public_key.key": "srVpubkeyE1xAmPlE2yAmPlE3yAmPlE4yAmPlE5yA=",
+                "/opt/amnezia/wireguard/wireguard_psk.key": "pskMockKeyE1xAmPlE2yAmPlE3yAmPlE4yAmPlE5y=",
             },
             "amnezia-awg2": {
                 "/opt/amnezia/awg/awg0.conf": WG0_CONF_AWG2,
@@ -159,7 +178,7 @@ class MockBackend:
         }
         self._inspect = {
             # Pre-seeded containers mimic a client deploy: log driver "none".
-            "amnezia-awg": {
+            "amnezia-wireguard": {
                 "env": {}, "ports": {"51820/udp": "51820"},
                 "networks": {"bridge": {"ip": "172.17.0.2"}},
             },
@@ -184,9 +203,9 @@ class MockBackend:
                 "networks": {"amnezia-dns-net": {"ip": "172.29.172.254"}},
             },
         }
-        self._dumps = {"amnezia-awg": WG_DUMP_AWG, "amnezia-awg2": WG_DUMP_AWG2}
+        self._dumps = {"amnezia-wireguard": WG_DUMP_AWG, "amnezia-awg2": WG_DUMP_AWG2}
         self._services = [
-            ServiceInfo("amnezia-awg", "running", "amneziavpn/amneziawg-go:latest",
+            ServiceInfo("amnezia-wireguard", "running", "amnezia-wireguard:latest",
                         (_now - timedelta(days=6)).isoformat(), "51820/udp->51820"),
             ServiceInfo("amnezia-awg2", "running", "amneziavpn/amneziawg-go:latest",
                         (_now - timedelta(days=3)).isoformat(), "51821/udp->51821"),

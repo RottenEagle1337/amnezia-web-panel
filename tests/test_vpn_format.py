@@ -45,13 +45,13 @@ def test_vpn_qr_frames_structure():
     assert decode_vpn(link)["defaultContainer"] == "amnezia-awg2"
 
 
-def _check_common(server: dict, container: str, name: str):
+def _check_common(server: dict, container: str, name: str, block: str = "awg"):
     assert server["defaultContainer"] == container
     assert server["containers"][0]["container"] == container
     assert name in server["description"]
     assert server["dns1"] and server["dns2"]
     assert server["hostName"] == "1.2.3.4"
-    awg = server["containers"][0]["awg"]
+    awg = server["containers"][0][block]
     last = json.loads(awg["last_config"])
     assert last["config"].startswith("[Interface]")
     assert last["client_priv_key"]
@@ -62,14 +62,13 @@ def _check_common(server: dict, container: str, name: str):
     return awg, last
 
 
-def test_vpn_link_awg2():
+def test_vpn_link_wireguard():
     backend = MockBackend()
-    _, _, link = keys.create_client(backend, "amnezia-awg", "phone-t", "1.2.3.4", "51820")
+    _, _, link = keys.create_client(backend, "amnezia-wireguard", "phone-t", "1.2.3.4", "51820")
     server = decode_vpn(link)
-    awg, last = _check_common(server, "amnezia-awg", "phone-t")
-    assert awg["protocol_version"] == "2.0"
-    assert awg["Jc"] and awg["H4"]
-    assert "Jc = " in last["config"]
+    wg, last = _check_common(server, "amnezia-wireguard", "phone-t", block="wireguard")
+    assert "protocol_version" not in wg          # classic wg: no obfuscation block
+    assert "Jc = " not in last["config"]
     assert "Endpoint = 1.2.3.4:51820" in last["config"]
 
 

@@ -11,23 +11,29 @@ from . import awg, crypto
 from .amnezia_fmt import build_vpn_link
 from .backend.base import Backend
 
+WG_DIR = "/opt/amnezia/wireguard"
 AWG_DIR = "/opt/amnezia/awg"
-TABLE = f"{AWG_DIR}/clientsTable"
-SERVER_PUB = f"{AWG_DIR}/wireguard_server_public_key.key"
 
 # Containers that hold an AWG-style layout we can manage.
-MANAGEABLE = ("amnezia-awg", "amnezia-awg2")
+MANAGEABLE = ("amnezia-wireguard", "amnezia-awg2")
 
-# Per-container layout: config file path and interface name.
-# amnezia-awg uses wg0.conf/wg0, amnezia-awg2 uses awg0.conf/awg0.
+# Per-container layout: config file, interface name, clients table, server keys.
 LAYOUTS = {
-    "amnezia-awg": {"conf": f"{AWG_DIR}/wg0.conf", "iface": "wg0"},
-    "amnezia-awg2": {"conf": f"{AWG_DIR}/awg0.conf", "iface": "awg0"},
+    "amnezia-wireguard": {
+        "conf": f"{WG_DIR}/wg0.conf", "iface": "wg0",
+        "table": f"{WG_DIR}/clientsTable",
+        "server_pub": f"{WG_DIR}/wireguard_server_public_key.key",
+    },
+    "amnezia-awg2": {
+        "conf": f"{AWG_DIR}/awg0.conf", "iface": "awg0",
+        "table": f"{AWG_DIR}/clientsTable",
+        "server_pub": f"{AWG_DIR}/wireguard_server_public_key.key",
+    },
 }
 
 
 def _layout(container: str) -> dict:
-    return LAYOUTS.get(container, LAYOUTS["amnezia-awg"])
+    return LAYOUTS.get(container, LAYOUTS["amnezia-wireguard"])
 
 
 # Read-modify-write of wg0.conf/awg0.conf is not atomic — serialize per container
@@ -79,8 +85,9 @@ def _syncconf(backend: Backend, container: str) -> None:
 
 
 def _load(backend: Backend, container: str) -> tuple[awg.ServerConfig, list[dict]]:
-    cfg = awg.parse_wg_conf(_read(backend, container, _layout(container)["conf"]))
-    table = awg.parse_clients_table(_read(backend, container, TABLE))
+    lay = _layout(container)
+    cfg = awg.parse_wg_conf(_read(backend, container, lay["conf"]))
+    table = awg.parse_clients_table(_read(backend, container, lay["table"]))
     return cfg, table
 
 
@@ -141,10 +148,10 @@ def create_client(backend: Backend, container: str, name: str,
             "clientName": name,
             "creationDate": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
         }})
-        _write(backend, container, TABLE, json.dumps(table, indent=2))
+        _write(backend, container, _layout(container)["table"], json.dumps(table, indent=2))
         _syncconf(backend, container)
 
-    server_pub = _read(backend, container, SERVER_PUB).strip()
+    server_pub = _read(backend, container, _layout(container)["server_pub"]).strip()
     # Real listen port from the server config wins over the env default.
     endpoint_port = cfg.interface.get("ListenPort", endpoint_port)
     config_text = awg.render_client_conf(
@@ -170,5 +177,5 @@ def revoke_client(backend: Backend, container: str, client_id: str) -> None:
             raise AWGError("client not found")
         cfg.peers = peers
         _write(backend, container, _layout(container)["conf"], awg.render_wg_conf(cfg))
-        _write(backend, container, TABLE, json.dumps(new_table, indent=2))
+        _write(backend, container, _layout(container)["table"], json.dumps(new_table, indent=2))
         _syncconf(backend, container)

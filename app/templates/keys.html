@@ -4,7 +4,7 @@
 <h1>Keys</h1>
 
 <div class="proto-switch">
-  <a class="pill {{ 'active' if container == 'amnezia-awg' }}" href="/keys/amnezia-awg">AmneziaWG 2.0</a>
+  <a class="pill {{ 'active' if container == 'amnezia-wireguard' }}" href="/keys/amnezia-wireguard">WireGuard</a>
   <a class="pill {{ 'active' if container == 'amnezia-awg2' }}" href="/keys/amnezia-awg2">AmneziaWG 3.1</a>
   <a class="pill {{ 'active' if container == 'amnezia-xray' }}" href="/keys/amnezia-xray">Xray</a>
   <a class="pill {{ 'active' if container == 'amnezia-openvpn' }}" href="/keys/amnezia-openvpn">OpenVPN</a>
@@ -19,7 +19,7 @@
   <p><span class="badge">not installed</span></p>
   {% if dkey %}
   <p class="hint">This protocol is not deployed on the server. Install it right here — it will be discovered by the Amnezia app.</p>
-  <form method="post" action="/deploy/{{ dkey }}" class="inline-form">
+  <form method="post" action="/deploy/{{ dkey }}" class="inline-form" data-loading>
     <input type="hidden" name="next" value="/keys/{{ container }}">
     <input type="number" name="port" value="{{ dspec.default_port }}" min="1" max="65535" style="width:110px">
     <button class="btn primary" type="submit">Install {{ container }}</button>
@@ -51,7 +51,7 @@
   </table>
   <div class="card-actions"><a class="btn" href="/config/{{ container }}">Server config</a></div>
   {% if dkey %}
-  <form method="post" action="/deploy/{{ dkey }}/remove" class="inline-form card-actions"
+  <form method="post" action="/deploy/{{ dkey }}/remove" class="inline-form card-actions" data-loading
         onsubmit='return confirmAction("Remove {{ container }}? All clients of this protocol will lose access.")'>
     <input type="hidden" name="next" value="/keys/{{ container }}">
     <label class="check"><input type="checkbox" name="wipe_data" value="1"> wipe data volumes</label>
@@ -62,7 +62,7 @@
 
 <div class="card">
   <h2>Issue key</h2>
-  <form method="post" action="/keys/{{ container }}/create" class="inline-form">
+  <form method="post" action="/keys/{{ container }}/create" class="inline-form" data-loading>
     <input type="text" name="name" placeholder="Client name (e.g. phone-maria)" maxlength="64" required>
     <button class="btn primary" type="submit">Issue</button>
   </form>

@@ -94,7 +94,7 @@ def test_deploy_dns_connects_existing_awg_containers():
     b.remove_container("amnezia-dns"); b._fs.pop("amnezia-dns", None)
     deploy.deploy_dns(b)
     names = {c for _, c, _ in b.network_connects}
-    assert {"amnezia-dns", "amnezia-awg", "amnezia-awg2"} <= names
+    assert {"amnezia-dns", "amnezia-wireguard", "amnezia-awg2"} <= names
 
 
 def test_deploy_rejects_invalid_tls_domain():
@@ -120,14 +120,6 @@ def test_deploy_awg2_writes_real_start_sh():
     assert "10.9.9.0/24" in sh
 
 
-def test_deploy_awg_legacy_start_sh_uses_wg0():
-    b = MockBackend()
-    b.remove_container("amnezia-awg"); b._fs.pop("amnezia-awg", None)
-    deploy.deploy_awg(b, "2.0", 51820)
-    sh = b._fs["amnezia-awg"]["/opt/amnezia/start.sh"]
-    assert "wg-quick up /opt/amnezia/awg/wg0.conf" in sh
-
-
 def test_deploy_mtproxy_configures_container_like_client():
     import re as _re
     b = MockBackend()
@@ -148,4 +140,16 @@ def test_deploy_awg_makes_start_sh_executable():
     b.remove_container("amnezia-awg2"); b._fs.pop("amnezia-awg2", None)
     deploy.deploy_awg(b, "3.1", 51821)
     # The image entrypoint execs /opt/amnezia/start.sh directly — no +x, no boot.
+    assert "/opt/amnezia/start.sh" in b.chmodded
+
+
+def test_deploy_wireguard_builds_image_and_writes_start_sh():
+    b = MockBackend()
+    b.remove_container("amnezia-wireguard"); b._fs.pop("amnezia-wireguard", None)
+    deploy.deploy_wg(b, 51820)
+    assert b.built == ["amnezia-wireguard"]  # no hub image — built from vendored Dockerfile
+    conf = b._fs["amnezia-wireguard"]["/opt/amnezia/wireguard/wg0.conf"]
+    assert "ListenPort = 51820" in conf and "Jc" not in conf  # classic wg: no obfuscation
+    sh = b._fs["amnezia-wireguard"]["/opt/amnezia/start.sh"]
+    assert "wg-quick up /opt/amnezia/wireguard/wg0.conf" in sh
     assert "/opt/amnezia/start.sh" in b.chmodded

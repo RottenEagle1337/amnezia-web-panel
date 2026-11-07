@@ -35,9 +35,9 @@ class DeploySpec:
 
 DEPLOYABLE: dict[str, DeploySpec] = {}
 
-DEPLOYABLE["awg"] = DeploySpec("awg", "amnezia-awg", AWG_IMAGE, "vpn", 51820,
-                               version="2.0", subnet="10.8.1.0/24", iface="wg0",
-                               conf_path="/opt/amnezia/awg/wg0.conf")
+DEPLOYABLE["wireguard"] = DeploySpec("wireguard", "amnezia-wireguard", "amnezia-wireguard",
+                                     "vpn", 51820, subnet="10.8.1.0/24", iface="wg0",
+                                     conf_path="/opt/amnezia/wireguard/wg0.conf")
 DEPLOYABLE["awg2"] = DeploySpec("awg2", "amnezia-awg2", AWG_IMAGE, "vpn", 51821,
                                 version="3.1", subnet="10.9.9.0/24", iface="awg0",
                                 conf_path="/opt/amnezia/awg/awg0.conf")
@@ -156,9 +156,50 @@ def _awg_start_sh(version: str, conf_path: str, subnet: str, iface: str) -> str:
                                subnet_ip=subnet_ip, cidr=cidr)
 
 
+def _wg_conf(port: int, subnet: str) -> tuple[str, str]:
+    """Classic WireGuard server config — no obfuscation params."""
+    priv = crypto.gen_private_key()
+    addr = f"{subnet.split('/')[0].rsplit('.', 1)[0]}.1/24"
+    lines = ["[Interface]", f"PrivateKey = {priv}",
+             f"Address = {addr}", f"ListenPort = {port}", ""]
+    return "\n".join(lines), crypto.public_key(priv)
+
+
+def deploy_wg(backend: Backend, port: int) -> None:
+    """Deploy classic WireGuard (amnezia-wireguard), mirroring the official client."""
+    spec = DEPLOYABLE["wireguard"]
+    _absent(backend, spec, port)
+    dockerfile = (Path(__file__).parent / "deploy_assets" / "wireguard.Dockerfile").read_text()
+    backend.build_image(spec.image, dockerfile)  # no hub image — the client builds it too
+    backend.run_container(
+        spec.container, spec.image,
+        ports={f"{port}/udp": port}, env={},
+        volumes={"/lib/modules": {"bind": "/lib/modules", "mode": "rw"}},
+        privileged=True, cap_add=["NET_ADMIN", "SYS_MODULE"],
+        sysctls={"net.ipv4.conf.all.src_valid_mark": "1"})
+    _ensure_dir(backend, spec.container, "/opt/amnezia/wireguard")
+    conf, pub = _wg_conf(port, spec.subnet)
+    _write(backend, spec.container, spec.conf_path, conf)
+    _write(backend, spec.container, "/opt/amnezia/wireguard/wireguard_server_public_key.key", pub + "\n")
+    _write(backend, spec.container, "/opt/amnezia/wireguard/wireguard_psk.key", crypto.gen_psk() + "\n")
+    _write(backend, spec.container, "/opt/amnezia/wireguard/clientsTable", "[]\n")
+    # The entrypoint idles until the real start script lands — write it (exec'd
+    # directly by dumb-init, so chmod +x or the container crash-loops).
+    _write(backend, spec.container, "/opt/amnezia/start.sh",
+           _awg_start_sh("2.0", spec.conf_path, spec.subnet, spec.iface))
+    code, out = backend.exec(spec.container, ["chmod", "+x", "/opt/amnezia/start.sh"])
+    if code != 0:
+        raise AWGError(f"chmod start.sh failed ({code}): {out.strip()}")
+    try:
+        backend.connect_network("amnezia-dns-net", spec.container)
+    except Exception:
+        pass  # DNS network is optional
+    backend.restart(spec.container)
+
+
 def deploy_awg(backend: Backend, version: str, port: int) -> None:
-    """Deploy amnezia-awg (2.0, wg0.conf) or amnezia-awg2 (3.1, awg0.conf)."""
-    spec = DEPLOYABLE["awg" if version == "2.0" else "awg2"]
+    """Deploy amnezia-awg2 (AWG 3.1, awg0.conf)."""
+    spec = DEPLOYABLE["awg2"]
     _absent(backend, spec, port)
     backend.pull_image(spec.image)
     backend.run_container(

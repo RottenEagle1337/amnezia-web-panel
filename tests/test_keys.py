@@ -4,7 +4,7 @@ from app.backend.mock_backend import MockBackend
 
 def test_list_clients_merges_table_and_stats():
     backend = MockBackend()
-    clients = keys.list_clients(backend, "amnezia-awg")
+    clients = keys.list_clients(backend, "amnezia-wireguard")
     assert len(clients) == 2
     by_name = {c.name: c for c in clients}
     ivan = by_name["phone-ivan"]
@@ -18,27 +18,27 @@ def test_list_clients_merges_table_and_stats():
 
 def test_create_then_revoke():
     backend = MockBackend()
-    name, config, vpn_link = keys.create_client(backend, "amnezia-awg", "test-device", "1.2.3.4", "51820")
+    name, config, vpn_link = keys.create_client(backend, "amnezia-wireguard", "test-device", "1.2.3.4", "51820")
 
-    clients = keys.list_clients(backend, "amnezia-awg")
+    clients = keys.list_clients(backend, "amnezia-wireguard")
     assert len(clients) == 3
     new = [c for c in clients if c.name == "test-device"][0]
     assert new.ip == "10.8.1.4/32"
     assert "Endpoint = 1.2.3.4:51820" in config
     assert "[Peer]" in config
-    assert backend.synced == ["amnezia-awg"]
+    assert backend.synced == ["amnezia-wireguard"]
 
-    keys.revoke_client(backend, "amnezia-awg", new.client_id)
-    clients = keys.list_clients(backend, "amnezia-awg")
+    keys.revoke_client(backend, "amnezia-wireguard", new.client_id)
+    clients = keys.list_clients(backend, "amnezia-wireguard")
     assert len(clients) == 2
     assert all(c.name != "test-device" for c in clients)
-    assert backend.synced == ["amnezia-awg", "amnezia-awg"]
+    assert backend.synced == ["amnezia-wireguard", "amnezia-wireguard"]
 
 
 def test_revoke_unknown_raises():
     backend = MockBackend()
     try:
-        keys.revoke_client(backend, "amnezia-awg", "no-such-key")
+        keys.revoke_client(backend, "amnezia-wireguard", "no-such-key")
     except keys.AWGError as exc:
         assert "not found" in str(exc)
     else:
@@ -49,7 +49,7 @@ def test_create_rejects_bad_name():
     backend = MockBackend()
     for bad in ("", "   ", "x" * 65):
         try:
-            keys.create_client(backend, "amnezia-awg", bad, "1.2.3.4", "51820")
+            keys.create_client(backend, "amnezia-wireguard", bad, "1.2.3.4", "51820")
         except keys.AWGError:
             pass
         else:
@@ -71,12 +71,12 @@ def test_awg2_writes_awg0_conf():
     """amnezia-awg2 stores peers in awg0.conf, not wg0.conf."""
     backend = MockBackend()
     fs = backend._fs["amnezia-awg2"]
-    assert "/opt/amnezia/awg/wg0.conf" not in fs  # awg2 has no wg0.conf at all
+    assert "/opt/amnezia/wireguard/wg0.conf" not in fs  # awg2 has no wg0.conf at all
     before = fs["/opt/amnezia/awg/awg0.conf"]
     keys.create_client(backend, "amnezia-awg2", "layout-check", "1.2.3.4", "51821")
     assert fs["/opt/amnezia/awg/awg0.conf"] != before
     assert fs["/opt/amnezia/awg/awg0.conf"].count("[Peer]") == before.count("[Peer]") + 1
-    assert "/opt/amnezia/awg/wg0.conf" not in fs  # nothing leaked into wg0.conf
+    assert "/opt/amnezia/wireguard/wg0.conf" not in fs  # nothing leaked into wg0.conf
 
 
 def test_awg2_revoke():
@@ -90,9 +90,9 @@ def test_awg2_revoke():
 def test_create_missing_conf_raises_awgerror():
     """Empty/unreadable server config gives AWGError, not a bare ValueError."""
     backend = MockBackend()
-    del backend._fs["amnezia-awg"]["/opt/amnezia/awg/wg0.conf"]
+    del backend._fs["amnezia-wireguard"]["/opt/amnezia/wireguard/wg0.conf"]
     try:
-        keys.create_client(backend, "amnezia-awg", "x", "1.2.3.4", "51820")
+        keys.create_client(backend, "amnezia-wireguard", "x", "1.2.3.4", "51820")
     except keys.AWGError as exc:
         assert "Address" in str(exc)
     else:

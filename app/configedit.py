@@ -25,7 +25,7 @@ def _awg_spec(container: str) -> ConfigSpec:
 
 
 SPECS: dict[str, ConfigSpec] = {
-    "amnezia-awg": _awg_spec("amnezia-awg"),
+    "amnezia-wireguard": _awg_spec("amnezia-wireguard"),
     "amnezia-awg2": _awg_spec("amnezia-awg2"),
     "amnezia-telemt": ConfigSpec("amnezia-telemt", "/data/config.toml", "toml", "restart"),
 }
@@ -50,6 +50,12 @@ FIELD_SPECS: list[tuple[str, str]] = [f for _, fields in FIELD_SECTIONS for f in
 INT_FIELDS = tuple(name for name, _ in FIELD_SPECS)
 
 _INT_RE = re.compile(r"^[0-9]+(-[0-9]+)?$")  # int or "min-max" range
+
+# AWG obfuscation keys — illegal in a classic WireGuard (wg-quick) config.
+AWG_OBFUSCATION_KEYS = ("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
+                        "H1", "H2", "H3", "H4")
+AWG31_ONLY_KEYS = tuple(name for name, _ in FIELD_SPECS
+                        if name not in AWG_OBFUSCATION_KEYS and name != "ListenPort")
 
 
 def read_config(backend: Backend, container: str) -> str:
@@ -98,6 +104,12 @@ def validate_config(backend: Backend, container: str, text: str) -> list[str]:
         except tomllib.TOMLDecodeError as exc:
             return [f"TOML: {exc}"]
         return []
+    cfg = awg.parse_wg_conf(text)
+    if container == "amnezia-wireguard":
+        # wg-quick (classic WireGuard) dies on AWG obfuscation keys.
+        bad = [k for k in (*AWG_OBFUSCATION_KEYS, *AWG31_ONLY_KEYS) if k in cfg.interface]
+        if bad:
+            return [f"{', '.join(bad)} not supported by classic WireGuard (wg-quick)"]
     live = awg.parse_wg_conf(read_config(backend, container))
     return _validate_awg(text, live.peers)
 

@@ -19,7 +19,7 @@ def test_auth_required():
     c = TestClient(create_app())
     r = c.get("/", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/login"
-    r = c.get("/keys/amnezia-awg", follow_redirects=False)
+    r = c.get("/keys/amnezia-wireguard", follow_redirects=False)
     assert r.status_code == 303
     # wrong password
     r = c.post("/login", data={"password": "nope"}, follow_redirects=False)
@@ -29,32 +29,32 @@ def test_auth_required():
 def test_dashboard_lists_services():
     c = _client()
     page = c.get("/").text
-    for name in ("amnezia-awg", "amnezia-awg2", "amnezia-xray", "amnezia-openvpn"):
+    for name in ("amnezia-wireguard", "amnezia-awg2", "amnezia-xray", "amnezia-openvpn"):
         assert name in page
 
 
 def test_keys_page_lists_clients():
     c = _client()
-    page = c.get("/keys/amnezia-awg").text
+    page = c.get("/keys/amnezia-wireguard").text
     assert "phone-ivan" in page
     assert "laptop-anna" in page
 
 
 def test_create_and_revoke_via_web():
     c = _client()
-    r = c.post("/keys/amnezia-awg/create", data={"name": "web-test"})
+    r = c.post("/keys/amnezia-wireguard/create", data={"name": "web-test"})
     assert r.status_code == 200
     assert "QR" in r.text
     assert "PrivateKey" in r.text
 
-    page = c.get("/keys/amnezia-awg").text
+    page = c.get("/keys/amnezia-wireguard").text
     assert "web-test" in page
     ids = re.findall(r'name="client_id" value="([^"]+)"', page)
     assert ids
     # base64 keys contain '+' and '/' — revoke must survive form-encoding
-    r = c.post("/keys/amnezia-awg/revoke", data={"client_id": ids[-1]}, follow_redirects=False)
+    r = c.post("/keys/amnezia-wireguard/revoke", data={"client_id": ids[-1]}, follow_redirects=False)
     assert r.status_code == 303
-    page = c.get("/keys/amnezia-awg").text
+    page = c.get("/keys/amnezia-wireguard").text
     assert "web-test" not in page
 
 
@@ -73,7 +73,7 @@ def test_keys_page_missing_container_shows_notice():
     assert "not installed" in page
     assert "Issue key" not in page
     # existing container still works
-    assert "phone-ivan" in c.get("/keys/amnezia-awg").text
+    assert "phone-ivan" in c.get("/keys/amnezia-wireguard").text
 
 
 def test_healthz_no_auth():
@@ -83,19 +83,19 @@ def test_healthz_no_auth():
 
 def test_config_editor_page_and_apply():
     c = _client()
-    r = c.get("/config/amnezia-awg")
+    r = c.get("/config/amnezia-awg2")
     assert r.status_code == 200 and "Jc" in r.text
     # apply a valid change
-    text = c.app.state.backend._fs["amnezia-awg"]["/opt/amnezia/awg/wg0.conf"]
-    r = c.post("/config/amnezia-awg", data={"text": text.replace("Jc = 3", "Jc = 7")},
+    text = c.app.state.backend._fs["amnezia-awg2"]["/opt/amnezia/awg/awg0.conf"]
+    r = c.post("/config/amnezia-awg2", data={"text": text.replace("Jc = 4", "Jc = 7")},
                follow_redirects=False)
     assert r.status_code == 303
-    assert "Jc = 7" in c.app.state.backend._fs["amnezia-awg"]["/opt/amnezia/awg/wg0.conf"]
+    assert "Jc = 7" in c.app.state.backend._fs["amnezia-awg2"]["/opt/amnezia/awg/awg0.conf"]
 
 
 def test_config_editor_rejects_invalid():
     c = _client()
-    r = c.post("/config/amnezia-awg", data={"text": "garbage"})
+    r = c.post("/config/amnezia-wireguard", data={"text": "garbage"})
     assert "error" in r.text or "ListenPort" in r.text  # re-rendered with errors
 
 
@@ -107,7 +107,7 @@ def test_config_editor_unknown_container():
 
 def test_config_editor_requires_auth():
     c = TestClient(create_app())
-    r = c.get("/config/amnezia-awg", follow_redirects=False)
+    r = c.get("/config/amnezia-wireguard", follow_redirects=False)
     assert r.status_code == 303 and r.headers["location"] == "/login"
 
 
@@ -124,7 +124,7 @@ def test_config_editor_field_form():
     assert 'data-key="Address"' not in page
     assert 'data-key="PostUp"' not in page
     # awg 2.0 has no 3.1-only fields
-    page2 = c.get("/config/amnezia-awg").text
+    page2 = c.get("/config/amnezia-wireguard").text
     assert 'data-key="HeaderProtectionKey"' not in page2
     assert 'data-key="RandomTrailers"' not in page2
 
@@ -135,14 +135,14 @@ def test_config_editor_sections():
     for section in ("General", "Junk packets", "Packet sizes", "Magic headers",
                     "Header protection", "Rekey", "Cookies"):
         assert section in page
-    # awg 2.0 shows only the sections its fields belong to
-    page2 = c.get("/config/amnezia-awg").text
-    assert "Junk packets" in page2 and "Cookies" not in page2
+    # classic WireGuard has no obfuscation sections at all
+    page2 = c.get("/config/amnezia-wireguard").text
+    assert "Junk packets" not in page2 and "Cookies" not in page2
 
 
 def test_duplicate_key_name_rejected():
     c = _client()
-    r = c.post("/keys/amnezia-awg/create", data={"name": "phone-ivan"},
+    r = c.post("/keys/amnezia-wireguard/create", data={"name": "phone-ivan"},
                follow_redirects=False)
     assert r.status_code == 303 and "error=" in r.headers["location"]
     assert "exists" in r.headers["location"]
@@ -154,18 +154,18 @@ def test_duplicate_key_name_rejected():
 
 def test_keys_page_proto_info_and_config_button():
     c = _client()
-    page = c.get("/keys/amnezia-awg").text
+    page = c.get("/keys/amnezia-wireguard").text
     assert "51820" in page                      # port from live config
     assert "10.8.1.1/24" in page                # subnet
-    assert 'href="/config/amnezia-awg"' in page
-    cfg = c.get("/config/amnezia-awg").text
-    assert 'href="/keys/amnezia-awg"' in cfg    # Cancel returns to the protocol page
+    assert 'href="/config/amnezia-wireguard"' in page
+    cfg = c.get("/config/amnezia-wireguard").text
+    assert 'href="/keys/amnezia-wireguard"' in cfg    # Cancel returns to the protocol page
 
 
 def test_config_restore_bad_backup_shows_error():
     c = _client()
-    r = c.post("/config/amnezia-awg/restore",
-               data={"backup": "/opt/amnezia/awg/wg0.conf.bak-nope"},
+    r = c.post("/config/amnezia-wireguard/restore",
+               data={"backup": "/opt/amnezia/wireguard/wg0.conf.bak-nope"},
                follow_redirects=False)
     assert "err=" in r.headers["location"]
 
@@ -179,13 +179,13 @@ def test_static_cache_bust():
 def test_deploy_controls_live_on_protocol_pages():
     c = _client()
     # installed protocol -> Remove under the protocol info
-    page = c.get("/keys/amnezia-awg").text
-    assert 'action="/deploy/awg/remove"' in page
+    page = c.get("/keys/amnezia-wireguard").text
+    assert 'action="/deploy/wireguard/remove"' in page
     # missing protocol -> inline Install form instead of a link
     b = c.app.state.backend
-    b.remove_container("amnezia-awg"); b._fs.pop("amnezia-awg", None)
-    page = c.get("/keys/amnezia-awg").text
-    assert 'action="/deploy/awg"' in page and 'name="port"' in page
+    b.remove_container("amnezia-wireguard"); b._fs.pop("amnezia-wireguard", None)
+    page = c.get("/keys/amnezia-wireguard").text
+    assert 'action="/deploy/wireguard"' in page and 'name="port"' in page
     assert 'href="/deploy"' not in page      # no separate Install section
     # services -> controls on the extras pages
     mt = c.get("/extras/mtproxy").text
@@ -196,15 +196,15 @@ def test_deploy_controls_live_on_protocol_pages():
 def test_deploy_install_awg_and_remove():
     c = _client()
     b = c.app.state.backend
-    b.remove_container("amnezia-awg"); b._fs.pop("amnezia-awg", None)
-    r = c.post("/deploy/awg", data={"port": "51820", "next": "/keys/amnezia-awg"},
+    b.remove_container("amnezia-wireguard"); b._fs.pop("amnezia-wireguard", None)
+    r = c.post("/deploy/wireguard", data={"port": "51820", "next": "/keys/amnezia-wireguard"},
                follow_redirects=False)
     assert r.status_code == 303
-    assert r.headers["location"].startswith("/keys/amnezia-awg")
-    assert b.ran and b.ran[0]["name"] == "amnezia-awg"
-    r = c.post("/deploy/awg/remove", data={"wipe_data": "1", "next": "/keys/amnezia-awg"},
+    assert r.headers["location"].startswith("/keys/amnezia-wireguard")
+    assert b.ran and b.ran[0]["name"] == "amnezia-wireguard"
+    r = c.post("/deploy/wireguard/remove", data={"wipe_data": "1", "next": "/keys/amnezia-wireguard"},
                follow_redirects=False)
-    assert ("amnezia-awg", True) in b.removed
+    assert ("amnezia-wireguard", True) in b.removed
 
 
 def test_deploy_requires_domain_for_proxies():
@@ -223,7 +223,7 @@ def test_deploy_unknown_key_redirects():
 
 def test_key_status_json():
     c = _client()
-    r = c.get("/keys/amnezia-awg/status.json")
+    r = c.get("/keys/amnezia-wireguard/status.json")
     assert r.status_code == 200
     rows = r.json()
     assert isinstance(rows, list) and rows
@@ -262,9 +262,9 @@ def test_mtproxy_reinstall_shows_links():
 def test_deploy_rejects_out_of_range_port():
     c = _client()
     b = c.app.state.backend
-    b.remove_container("amnezia-awg"); b._fs.pop("amnezia-awg", None)
+    b.remove_container("amnezia-wireguard"); b._fs.pop("amnezia-wireguard", None)
     for bad in ("70000", "-1", "0", "65536"):
-        r = c.post("/deploy/awg", data={"port": bad, "next": "/keys/amnezia-awg"},
+        r = c.post("/deploy/wireguard", data={"port": bad, "next": "/keys/amnezia-wireguard"},
                    follow_redirects=False)
         assert "error" in r.headers["location"], bad
     assert not b.ran  # nothing was started
@@ -279,5 +279,12 @@ def test_keys_page_survives_backend_exec_error():
     def boom(container, cmd):
         raise RuntimeError("Container is not running")  # docker APIError analog
     b.exec = boom
-    r = c.get("/keys/amnezia-awg")
+    r = c.get("/keys/amnezia-wireguard")
     assert r.status_code == 200
+
+
+def test_slow_forms_show_loading_overlay():
+    c = _client()
+    page = c.get("/keys/amnezia-wireguard").text
+    assert 'id="loading-overlay"' in page
+    assert "data-loading" in page  # issue-key + install/remove forms
