@@ -129,7 +129,8 @@ def list_clients(backend: Backend, container: str) -> list[ClientView]:
 
 
 def create_client(backend: Backend, container: str, name: str,
-                  endpoint_host: str, endpoint_port: str) -> tuple[str, str, str]:
+                  endpoint_host: str, endpoint_port: str,
+                  location: str = "") -> tuple[str, str, str]:
     """Create a peer. Returns (name, conf_text, vpn_link). Shown once, never stored."""
     name = name.strip()
     # The name lands in clientsTable and vpn:// — control characters are rejected.
@@ -173,7 +174,7 @@ def create_client(backend: Backend, container: str, name: str,
         client_private_key=private_key, client_public_key=public_key,
         preshared_key=preshared_key, client_ip=address.split("/")[0],
         server_public_key=server_pub, endpoint_host=endpoint_host,
-        endpoint_port=endpoint_port, config_text=config_text,
+        endpoint_port=endpoint_port, config_text=config_text, location=location,
     )
     return name, config_text, vpn_link
 

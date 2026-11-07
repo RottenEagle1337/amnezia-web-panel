@@ -81,3 +81,25 @@ def test_vpn_link_awg31():
     assert awg["S3"] and awg["S4"] and awg["I1"]
     assert last["persistent_keep_alive"] == "25-35"
     assert "S3 = " in last["config"] and "I1 = " in last["config"]
+
+
+def test_vpn_link_description_with_location():
+    backend = MockBackend()
+    _, _, link = keys.create_client(backend, "amnezia-wireguard", "phone-t", "1.2.3.4", "51820",
+                                    location="NL-AMS")
+    server = decode_vpn(link)
+    assert server["description"] == "phone-t | NL-AMS"
+
+
+def test_vpn_link_description_without_location_keeps_proto():
+    backend = MockBackend()
+    _, _, link = keys.create_client(backend, "amnezia-wireguard", "phone-t", "1.2.3.4", "51820")
+    assert decode_vpn(link)["description"] == "phone-t | WireGuard"
+
+
+def test_location_short():
+    from app import hostinfo
+    assert hostinfo.location_short({"countryCode": "NL", "city": "Amsterdam"}) == "NL-AMS"
+    assert hostinfo.location_short({"countryCode": "de", "city": "Frankfurt am Main"}) == "DE-FRA"
+    assert hostinfo.location_short({"countryCode": "", "city": "Amsterdam"}) == ""
+    assert hostinfo.location_short({"error": "boom"}) == ""

@@ -74,6 +74,7 @@ def build_vpn_link(
     endpoint_host: str,
     endpoint_port: str,
     config_text: str,
+    location: str = "",
 ) -> str:
     """Self-hosted guest key in the format the AmneziaVPN app imports."""
     v3 = is_v3(cfg)
@@ -113,7 +114,7 @@ def build_vpn_link(
             "port": str(listen_port),
             "transport_proto": "udp",
         }
-        description = f"{client_name} | WireGuard"
+        description = f"{client_name} | {location or 'WireGuard'}"
     else:
         block_key = "awg"
         block = {
@@ -123,7 +124,7 @@ def build_vpn_link(
             "port": str(listen_port),
             "transport_proto": "udp",
         }
-        description = f"{client_name} | {'AmneziaWG3' if v3 else 'AmneziaWG'}"
+        description = f"{client_name} | {location or ('AmneziaWG3' if v3 else 'AmneziaWG')}"
 
     server_json = {
         "containers": [{block_key: block, "container": container}],

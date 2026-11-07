@@ -59,3 +59,12 @@ def fetch_host_info(backend_kind: str = "docker") -> dict:
         info = {"ip": "", "error": str(exc), "source": "ipinfo.io"}
     _cache = (time.time(), info)
     return dict(info)
+
+
+def location_short(info: dict) -> str:
+    """'Netherlands'/'Amsterdam' -> 'NL-AMS' (country code + first 3 city letters)."""
+    cc = info.get("countryCode", "").strip().upper()
+    city = info.get("city", "").strip().replace(" ", "")
+    if not cc or not city:
+        return ""
+    return f"{cc}-{city[:3].upper()}"

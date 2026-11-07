@@ -288,3 +288,14 @@ def test_slow_forms_show_loading_overlay():
     page = c.get("/keys/amnezia-wireguard").text
     assert 'id="loading-overlay"' in page
     assert "data-loading" in page  # issue-key + install/remove forms
+
+
+def test_issued_key_description_has_location():
+    import re
+    from test_vpn_format import decode_vpn
+    c = _client()
+    r = c.post("/keys/amnezia-wireguard/create", data={"name": "geo-check"}, follow_redirects=False)
+    assert r.status_code == 200
+    link = re.search(r'(vpn://[A-Za-z0-9+/=_-]+)', r.text).group(1)
+    # mock host: Netherlands/Amsterdam
+    assert decode_vpn(link)["description"] == "geo-check | NL-AMS"

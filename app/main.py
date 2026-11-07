@@ -199,8 +199,10 @@ def _register_routes(app: FastAPI) -> None:
         try:
             if not any(s.name == container for s in app.state.backend.list_services()):
                 return RedirectResponse(f"/keys/{container}", status_code=303)
+            location = hostinfo.location_short(hostinfo.fetch_host_info(app.state.backend_kind))
             client_name, config_text, vpn_link = keys.create_client(
-                app.state.backend, container, name, ENDPOINT_HOST, ENDPOINT_PORT)
+                app.state.backend, container, name, ENDPOINT_HOST, ENDPOINT_PORT,
+                location=location)
         except keys.AWGError as exc:
             return RedirectResponse(
                 f"/keys/{container}?error={urllib.parse.quote(str(exc))}", status_code=303)
