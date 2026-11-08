@@ -3,22 +3,37 @@
 A lightweight web panel for a self-hosted [Amnezia VPN](https://github.com/amnezia-vpn/amnezia-client) server.
 It runs on the same host as the Amnezia containers, inside your local network.
 
+![Release](https://img.shields.io/badge/release-0.2.0-blueviolet)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED)
-![Tests](https://img.shields.io/badge/tests-43%20passed-34d399)
+![Tests](https://img.shields.io/badge/tests-103%20passed-34d399)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/login.png" width="340" alt="Sign in">
+</p>
+
+| Info — containers and the server as seen from outside | Keys — protocol info and key issue |
+|---|---|
+| ![Info](docs/screenshots/info.png) | ![Keys](docs/screenshots/keys.png) |
 
 ## Features
 
-- **Services** — all `amnezia-*` containers: status, image, ports, uptime, logs, restart.
+- **Info** — all `amnezia-*` containers: status, image, ports, uptime, restart.
   A "server as seen from outside" card: public IP, country, ISP, AS, address type.
-- **AmneziaWG 2.0 / 3.1 keys** — issue, revoke, list clients (IP, online, endpoint, traffic).
+- **WireGuard / AmneziaWG 3.1 keys** — issue, revoke, list clients (IP, online, endpoint, traffic).
   The config is shown **once**: a `vpn://` key with an animated multi-frame QR
   (same as the official app) and a `.conf` for AmneziaWG/WireGuard. Xray and OpenVPN
   are placeholders for now.
 - **Proxy & DNS** — MTProxy and Telemt: mode, masking domain, `tg://` / `t.me` links
   with QR codes. AmneziaDNS: resolver network and IP.
+- **One-click deploy** — install and removal of WireGuard, AmneziaWG 3.1, AmneziaDNS,
+  MTProxy and Telemt right on their pages (see [Deploying protocols](#deploying-protocols)).
+- **Config editor** — edit server configs from the browser with validation,
+  automatic backups and restore (see [Config editor](#config-editor)).
 - **Minimalism** — dark theme in the spirit of 3x-ui, no JS frameworks, one container.
 
 ## Quick start: server (Linux + Docker)
@@ -145,6 +160,41 @@ ssh -L 8080:localhost:8080 user@your-vps
 
 For non-interactive installs you can preset the mode: `PANEL_BIND=127.0.0.1 ./install.sh`.
 
+## Deploying protocols
+
+Protocols and services are deployed and removed right on their own pages
+(VPN → protocol, Proxy & DNS → service) via the Docker API with the same
+container names, ports and file layout as the official client — protocols
+installed from the panel are discovered by the Amnezia app (and vice versa).
+
+| Service | Container | Default port | Notes |
+|---|---|---|---|
+| WireGuard | `amnezia-wireguard` | 51820/udp | `wg0.conf`, image built locally from the vendored Dockerfile (not pulled) |
+| AmneziaWG 3.1 | `amnezia-awg2` | 51821/udp | `awg0.conf`, AWG 3.1 extra obfuscation params |
+| AmneziaDNS | `amnezia-dns` | — | unbound on `amnezia-dns-net` (172.29.172.254) |
+| MTProxy | `amnezia-mtproxy` | 8443/tcp | FakeTLS, requires a masking domain |
+| Telemt | `amnezia-telemt` | 443/tcp | TLS mode, requires a masking domain |
+
+Removal optionally wipes data volumes. Xray and OpenVPN stay manual for now —
+install them from the official app.
+
+> Note: removing a protocol in the panel does not remove it from the Amnezia
+> app's server view — see [Known limitations](#known-limitations).
+
+## Config editor
+
+The **Server config** button on a protocol page opens a structured editor for
+the live config (`wg0.conf` / `awg0.conf`, Telemt `config.toml`).
+
+- Only the fields the official client exposes are editable; the rest is read-only.
+- Every change is validated before applying; invalid input is rejected with errors.
+- The previous config is backed up automatically (`.bak-<timestamp>`); any backup
+  can be restored from the same page.
+- Client peers are never touched — only the `[Interface]` section.
+
+> Note: edits made here do not propagate to the Amnezia app —
+> see [Known limitations](#known-limitations).
+
 ## Security
 
 - The panel is **for LAN only**. Never expose port 8080 to the internet.
@@ -157,6 +207,35 @@ For non-interactive installs you can preset the mode: `PANEL_BIND=127.0.0.1 ./in
 - Sessions: HMAC cookie (12 h, httponly, samesite=lax), reset on panel restart.
 - Optional hardening: [tecnativa/docker-socket-proxy](https://github.com/tecnativa/docker-socket-proxy) with an API whitelist.
 
+## Troubleshooting
+
+**Changes made in the panel do not show up in the Amnezia app.** See
+[Known limitations](#known-limitations).
+
+**`readlink: Permission denied` / `Unable to modify interface: No such device`
+when issuing a WireGuard key.** On Ubuntu 24.04+ the host ships an AppArmor
+profile named `wg-quick` that also confines `wg-quick` *inside containers*,
+breaking it ([Ubuntu bug #2123870](https://bugs.launchpad.net/bugs/2123870)).
+The panel works around it (own `strip` for `syncconf`, direct `ip`/`wg`
+fallback in the container's start.sh), but the cleanest fix is on the host —
+it also unbreaks the official client:
+
+```bash
+sudo apt install -y apparmor-utils && sudo aa-complain /etc/apparmor.d/wg-quick
+docker restart amnezia-wireguard
+```
+
+## Known limitations
+
+- **The Amnezia app does not pick up panel-side changes.** Editing a server
+  config (port, obfuscation params) or removing a protocol/service in the
+  panel changes the real containers, but the Amnezia client keeps showing the
+  old state — the app caches the server configuration locally. Keys issued in
+  the app may then contain stale endpoints. Workaround: re-check/re-add the
+  server in the app after such changes. The issue is being investigated.
+- An old `amnezia-awg` (AWG 2.0) container is visible in Info but is not
+  manageable — remove it and install WireGuard instead.
+
 ## Project layout
 
 ```
@@ -165,13 +244,16 @@ app/
   auth.py              PBKDF2 hash, sessions, brute-force guard
   passhash.py          password hash generator (called by install.sh)
   keys.py              AWG client issue/revoke/list
+  configedit.py        server config editor (validation, backups, restore)
+  deploy.py            one-click install/remove of protocols and services
+  deploy_assets/       vendored images (AmneziaDNS unbound Dockerfile)
   extras.py            MTProxy / Telemt / AmneziaDNS
   amnezia_fmt.py       AmneziaVPN format export (vpn://)
   awg.py               wg0.conf / clientsTable / wg show dump parsing
   crypto.py            WireGuard keys (X25519, pure Python)
-  hostinfo.py          server's external view (ip-api.com, 5 min cache)
+  hostinfo.py          server's external view (ipinfo.io over HTTPS, 5 min cache)
   backend/             docker socket (prod) / in-memory mock (development)
-tests/                 pytest: 43 tests
+tests/                 pytest: 103 tests
 docs/research.md       Amnezia formats research (step 1)
 install.sh             one-command server setup
 uninstall.sh/.ps1      full removal scripts
@@ -179,8 +261,8 @@ uninstall.sh/.ps1      full removal scripts
 
 ## Roadmap
 
-- Proxy config editor (Telemt `config.toml`, MTProxy env)
-- `wg0.conf` editor with validation and backup
+- Xray and OpenVPN management
+- One-click deploy of Xray / OpenVPN from the panel
 
 ## License
 

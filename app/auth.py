@@ -47,15 +47,21 @@ class Auth:
         sig = hmac.new(self._secret, ts.encode(), hashlib.sha256).hexdigest()
         return f"{ts}.{sig}"
 
+    def rotate_secret(self) -> None:
+        """Invalidate all outstanding tokens (single-admin panel: called on logout)."""
+        self._secret = secrets.token_bytes(32)
+
     def verify_token(self, token: str) -> bool:
         try:
             ts, sig = token.split(".", 1)
+            issued = int(ts)
         except ValueError:
             return False
         expected = hmac.new(self._secret, ts.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, expected):
             return False
-        return time.time() - int(ts) < SESSION_TTL
+        age = time.time() - issued
+        return 0 <= age < SESSION_TTL
 
 
 class LoginThrottle:

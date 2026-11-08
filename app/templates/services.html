@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}Services — Amnezia Panel{% endblock %}
+{% block title %}Info — Amnezia Panel{% endblock %}
 {% block content %}
-<h1>Services</h1>
+<h1>Info</h1>
 {% if not endpoint_host %}
 <p class="warn">AWG_ENDPOINT_HOST is not set — client configs will have no server address. Set it in .env.</p>
 {% endif %}
@@ -19,7 +19,7 @@
   {% else %}
   <div class="host-grid">
     <div><div class="lbl">Address</div><div class="mono big">{{ host.ip }}</div></div>
-    <div><div class="lbl">Country</div><div>{{ host.country }} ({{ host.countryCode }}){{ ', ' + host.city if host.city }}</div></div>
+    <div><div class="lbl">Country</div><div>{{ (host.country + ' ') if host.country }}{{ host.countryCode }}{{ ', ' + host.city if host.city }}</div></div>
     <div><div class="lbl">ISP</div><div>{{ host.isp or host.org }}</div></div>
     <div><div class="lbl">AS</div><div class="small">{{ host.as }}</div></div>
     <div><div class="lbl">Address type</div><div><span class="badge {{ '' if host.address_type == 'Residential' else 'warn-badge' }}">{{ host.address_type }}</span></div></div>
@@ -28,7 +28,7 @@
   {% endif %}
 </div>
 
-<div class="card" style="padding: 0; overflow: hidden;">
+<div class="card table-card">
 <table>
   <thead>
     <tr><th>Service</th><th>Status</th><th>Image</th><th>Ports</th><th>Started</th><th></th></tr>
@@ -42,13 +42,15 @@
       <td class="mono small">{{ s.ports }}</td>
       <td class="small">{{ s.started_at[:19].replace('T', ' ') if s.started_at else '—' }}</td>
       <td class="actions">
-        <a class="btn" href="/services/{{ s.name }}/logs">Logs</a>
+        {% if s.name in config_specs %}
+        <a class="btn" href="/config/{{ s.name }}">Config</a>
+        {% endif %}
         {% if s.name in manageable %}
         <a class="btn primary" href="/keys/{{ s.name }}">Keys</a>
         {% endif %}
         {% if s.status == 'running' and s.name != self_name %}
         <form method="post" action="/services/{{ s.name }}/restart"
-              onsubmit="return confirmAction('Restart {{ s.name }}?')">
+              onsubmit='return confirmAction("Restart " + {{ s.name | tojson }} + "?")'>
           <button class="btn danger" type="submit">Restart</button>
         </form>
         {% endif %}

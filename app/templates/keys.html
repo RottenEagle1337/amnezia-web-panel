@@ -4,19 +4,29 @@
 <h1>Keys</h1>
 
 <div class="proto-switch">
-  <a class="pill {{ 'active' if container == 'amnezia-awg' }}" href="/keys/amnezia-awg">AmneziaWG 2.0</a>
+  <a class="pill {{ 'active' if container == 'amnezia-wireguard' }}" href="/keys/amnezia-wireguard">WireGuard</a>
   <a class="pill {{ 'active' if container == 'amnezia-awg2' }}" href="/keys/amnezia-awg2">AmneziaWG 3.1</a>
   <a class="pill {{ 'active' if container == 'amnezia-xray' }}" href="/keys/amnezia-xray">Xray</a>
   <a class="pill {{ 'active' if container == 'amnezia-openvpn' }}" href="/keys/amnezia-openvpn">OpenVPN</a>
 </div>
 
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
+{% if done %}<p class="ok-msg">{{ done }}</p>{% endif %}
 
 {% if missing %}
 <div class="card placeholder-card">
   <h2><span class="mono">{{ container }}</span></h2>
   <p><span class="badge">not installed</span></p>
+  {% if dkey %}
+  <p class="hint">This protocol is not deployed on the server. Install it right here — it will be discovered by the Amnezia app.</p>
+  <form method="post" action="/deploy/{{ dkey }}" class="inline-form" data-loading>
+    <input type="hidden" name="next" value="/keys/{{ container }}">
+    <input type="number" name="port" value="{{ dspec.default_port }}" min="1" max="65535" style="width:110px">
+    <button class="btn primary" type="submit">Install {{ container }}</button>
+  </form>
+  {% else %}
   <p class="hint">This protocol is not deployed on the server. Install it via the Amnezia app, then reload this page.</p>
+  {% endif %}
 </div>
 {% elif placeholder %}
 <div class="card placeholder-card">
@@ -32,8 +42,27 @@
 </div>
 {% else %}
 <div class="card">
-  <h2>Issue key <span class="small mono">({{ container }})</span></h2>
-  <form method="post" action="/keys/{{ container }}/create" class="inline-form">
+  <h2>Protocol</h2>
+  <table class="kv">
+    <tr><td>Container</td><td class="mono">{{ container }}</td></tr>
+    {% if proto_info.port %}<tr><td>Port</td><td class="mono">{{ proto_info.port }}/udp</td></tr>{% endif %}
+    {% if proto_info.subnet %}<tr><td>Subnet</td><td class="mono">{{ proto_info.subnet }}</td></tr>{% endif %}
+    <tr><td>Clients</td><td>{{ clients|length }}</td></tr>
+  </table>
+  <div class="card-actions"><a class="btn" href="/config/{{ container }}">Server config</a></div>
+  {% if dkey %}
+  <form method="post" action="/deploy/{{ dkey }}/remove" class="inline-form card-actions" data-loading
+        onsubmit='return confirmAction("Remove {{ container }}? All clients of this protocol will lose access.")'>
+    <input type="hidden" name="next" value="/keys/{{ container }}">
+    <label class="check"><input type="checkbox" name="wipe_data" value="1"> wipe data volumes</label>
+    <button class="btn danger" type="submit">Remove protocol</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h2>Issue key</h2>
+  <form method="post" action="/keys/{{ container }}/create" class="inline-form" data-loading>
     <input type="text" name="name" placeholder="Client name (e.g. phone-maria)" maxlength="64" required>
     <button class="btn primary" type="submit">Issue</button>
   </form>
@@ -47,20 +76,20 @@
   </thead>
   <tbody>
   {% for c in clients %}
-    <tr>
+    <tr data-cid="{{ c.client_id }}">
       <td>{{ c.name }}</td>
       <td class="mono">{{ c.ip }}</td>
       <td class="small">{{ c.created[:10] }}</td>
-      <td>
+      <td class="c-status">
         <span class="badge {{ 'ok' if c.online else '' }}">{{ 'online' if c.online else 'offline' }}</span>
-        {% if c.orphaned %}<span class="badge bad" title="Present in clientsTable but missing from wg0.conf">orphan</span>{% endif %}
+        {% if c.orphaned %}<span class="badge bad" title="Present in clientsTable but missing from the server config">orphan</span>{% endif %}
       </td>
-      <td class="mono small">{{ c.endpoint or '—' }}</td>
-      <td class="small">{{ c.rx }}</td>
-      <td class="small">{{ c.tx }}</td>
+      <td class="mono small c-endpoint">{{ c.endpoint or '—' }}</td>
+      <td class="small c-rx">{{ c.rx }}</td>
+      <td class="small c-tx">{{ c.tx }}</td>
       <td class="actions">
         <form method="post" action="/keys/{{ container }}/revoke"
-              onsubmit="return confirmAction('Revoke key &quot;{{ c.name }}&quot;? The client will lose access.')">
+              onsubmit='return confirmAction("Revoke key " + {{ c.name | tojson }} + "? The client will lose access.")'>
           <input type="hidden" name="client_id" value="{{ c.client_id }}">
           <button class="btn danger" type="submit">Revoke</button>
         </form>
@@ -72,5 +101,34 @@
   </tbody>
 </table>
 </div>
+<script>
+// Live client status: light poll every 5 s, updates badges/traffic in place.
+(function () {
+  const url = "/keys/{{ container }}/status.json";
+  async function tick() {
+    try {
+      const resp = await fetch(url, { credentials: "same-origin" });
+      const rows = await resp.json();
+      if (!Array.isArray(rows)) return;
+      for (const st of rows) {
+        const tr = document.querySelector('tr[data-cid="' + CSS.escape(st.client_id) + '"]');
+        if (!tr) continue;
+        const badge = tr.querySelector(".c-status .badge");
+        if (badge) {
+          badge.textContent = st.online ? "online" : "offline";
+          badge.classList.toggle("ok", !!st.online);
+        }
+        const ep = tr.querySelector(".c-endpoint");
+        if (ep) ep.textContent = st.endpoint || "—";
+        const rx = tr.querySelector(".c-rx");
+        if (rx) rx.textContent = st.rx;
+        const tx = tr.querySelector(".c-tx");
+        if (tx) tx.textContent = st.tx;
+      }
+    } catch (e) { /* transient errors: keep last known state */ }
+  }
+  setInterval(tick, 5000);
+})();
+</script>
 {% endif %}
 {% endblock %}

@@ -4,25 +4,37 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Amnezia Panel{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v={{ static_v }}">
 </head>
 <body>
+{% if not hide_sidebar %}
 <aside class="sidebar">
   <div class="logo">Amnezia<span>Panel</span></div>
   <nav>
-    <a href="/" class="{{ 'active' if request.url.path == '/' }}">Services</a>
-    <div class="nav-title">VPN</div>
-    <a href="/keys/amnezia-awg" class="{{ 'active' if request.url.path.startswith('/keys') }}">Keys</a>
+    <a href="/" class="{{ 'active' if request.url.path == '/' }}">Info</a>
+    <div class="nav-title">Tools</div>
+    <a href="/keys/amnezia-wireguard" class="{{ 'active' if request.url.path.startswith('/keys') }}">VPN</a>
     <a href="/extras/mtproxy" class="{{ 'active' if request.url.path.startswith('/extras') }}">Proxy & DNS</a>
     <div class="nav-title">System</div>
     <a href="/logout">Logout</a>
   </nav>
 </aside>
-<main class="content">
+{% endif %}
+<main class="content{% if hide_sidebar %} no-sidebar{% endif %}">
 {% block content %}{% endblock %}
 </main>
+<div id="loading-overlay" hidden>
+  <div class="spinner"></div>
+  <p>Working, please wait…</p>
+</div>
 <script>
 function confirmAction(msg) { return window.confirm(msg); }
+// Long-running actions (deploy, key issue) submit synchronously — show progress.
+document.addEventListener("submit", function (e) {
+  if (!e.defaultPrevented && e.target.matches("form[data-loading]")) {
+    document.getElementById("loading-overlay").hidden = false;
+  }
+});
 </script>
 </body>
 </html>

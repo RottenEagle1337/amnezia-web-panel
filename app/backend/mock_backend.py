@@ -13,6 +13,25 @@ from datetime import datetime, timedelta, timezone
 
 from .base import ContainerNotFound, ServiceInfo
 
+# Classic WireGuard: no AWG obfuscation fields.
+WG0_CONF_WG = """[Interface]
+PrivateKey = aNk1f4EW1RfR0c9l0n6W3u0m0y6p9dYf8y3oF8xVq2E=
+Address = 10.8.1.1/24
+ListenPort = 51820
+PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -A FORWARD -o wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -D FORWARD -o wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+[Peer]
+PublicKey = XkN3v7mQ2pL8sR4tY6uI9oP1aS5dF7gH0jK3lZ8cV0nE=
+PresharedKey = mP9qW2eR5tY8uI1oP4aS7dF0gH3jK6lZ9cV2bN5mQ8wE=
+AllowedIPs = 10.8.1.2/32
+
+[Peer]
+PublicKey = bN5mQ8wE1rT4yU7iO0pA3sD6fG9hJ2kL5zX8cV1bN4mE=
+PresharedKey = qW2eR5tY8uI1oP4aS7dF0gH3jK6lZ9cV2bN5mQ8wE1rT4=
+AllowedIPs = 10.8.1.3/32
+"""
+
 WG0_CONF_AWG = """[Interface]
 PrivateKey = aNk1f4EW1RfR0c9l0n6W3u0m0y6p9dYf8y3oF8xVq2E=
 Address = 10.8.1.1/24
@@ -136,21 +155,21 @@ class MockBackend:
 
     def __init__(self) -> None:
         self._fs: dict[str, dict[str, str]] = {
-            "amnezia-awg": {
-                "/opt/amnezia/awg/wg0.conf": WG0_CONF_AWG,
-                "/opt/amnezia/awg/clientsTable": __import__("json").dumps(CLIENTS_AWG, indent=2),
-                "/opt/amnezia/awg/wireguard_server_public_key.key": "srVpubkeyE1xAmPlE2yAmPlE3yAmPlE4yAmPlE5yA=",
-                "/opt/amnezia/awg/wireguard_psk.key": "pskMockKeyE1xAmPlE2yAmPlE3yAmPlE4yAmPlE5y=",
+            "amnezia-wireguard": {
+                "/opt/amnezia/wireguard/wg0.conf": WG0_CONF_WG,
+                "/opt/amnezia/wireguard/clientsTable": __import__("json").dumps(CLIENTS_AWG, indent=2),
+                "/opt/amnezia/wireguard/wireguard_server_public_key.key": "srVpubkeyE1xAmPlE2yAmPlE3yAmPlE4yAmPlE5yA=",
+                "/opt/amnezia/wireguard/wireguard_psk.key": "pskMockKeyE1xAmPlE2yAmPlE3yAmPlE4yAmPlE5y=",
             },
             "amnezia-awg2": {
                 "/opt/amnezia/awg/awg0.conf": WG0_CONF_AWG2,
-                "/opt/amnezia/awg/wg0.conf": WG0_CONF_AWG2,
                 "/opt/amnezia/awg/clientsTable": __import__("json").dumps(CLIENTS_AWG2, indent=2),
                 "/opt/amnezia/awg/wireguard_server_public_key.key": "srVpubkeyAwg2xAmPlE2yAmPlE3yAmPlE4yAmPlE=",
                 "/opt/amnezia/awg/wireguard_psk.key": "pskMockKeyAwg2xAmPlE2yAmPlE3yAmPlE4yAmPl=",
             },
             "amnezia-mtproxy": {
                 "/data/secret": MTPROXY_SECRET,
+                "/data/mtproxy-meta": "mode=faketls\ndomain=googletagmanager.com\n",
             },
             "amnezia-telemt": {
                 "/data/config.toml": TELEMT_CONFIG,
@@ -158,6 +177,15 @@ class MockBackend:
             "amnezia-dns": {},
         }
         self._inspect = {
+            # Pre-seeded containers mimic a client deploy: log driver "none".
+            "amnezia-wireguard": {
+                "env": {}, "ports": {"51820/udp": "51820"},
+                "networks": {"bridge": {"ip": "172.17.0.2"}},
+            },
+            "amnezia-awg2": {
+                "env": {}, "ports": {"51821/udp": "51821"},
+                "networks": {"bridge": {"ip": "172.17.0.3"}},
+            },
             "amnezia-mtproxy": {
                 "env": {"MTPROXY_TRANSPORT_MODE": "faketls", "MTPROXY_TLS_DOMAIN": "googletagmanager.com",
                         "MTPROXY_PORT": "8443"},
@@ -175,9 +203,9 @@ class MockBackend:
                 "networks": {"amnezia-dns-net": {"ip": "172.29.172.254"}},
             },
         }
-        self._dumps = {"amnezia-awg": WG_DUMP_AWG, "amnezia-awg2": WG_DUMP_AWG2}
+        self._dumps = {"amnezia-wireguard": WG_DUMP_AWG, "amnezia-awg2": WG_DUMP_AWG2}
         self._services = [
-            ServiceInfo("amnezia-awg", "running", "amneziavpn/amneziawg-go:latest",
+            ServiceInfo("amnezia-wireguard", "running", "amnezia-wireguard:latest",
                         (_now - timedelta(days=6)).isoformat(), "51820/udp->51820"),
             ServiceInfo("amnezia-awg2", "running", "amneziavpn/amneziawg-go:latest",
                         (_now - timedelta(days=3)).isoformat(), "51821/udp->51821"),
@@ -193,6 +221,15 @@ class MockBackend:
         ]
         self.restarted: list[str] = []
         self.synced: list[str] = []
+        # Deployment operation records (Phase C).
+        self.pulled: list[str] = []
+        self.ran: list[dict] = []
+        self.removed: list[tuple[str, bool]] = []
+        self.networks_created: list[tuple[str, str]] = []
+        self.network_connects: list[tuple[str, str, str]] = []
+        self.built: list[str] = []
+        self.chmodded: list[str] = []
+        self.exec_calls: list[str] = []
 
     def list_services(self) -> list[ServiceInfo]:
         return copy.deepcopy(self._services)
@@ -202,6 +239,7 @@ class MockBackend:
         if files is None:
             raise ContainerNotFound(container)
         joined = " ".join(cmd)
+        self.exec_calls.append(joined)
 
         if cmd[:1] == ["cat"] and len(cmd) == 2:
             path = cmd[1]
@@ -214,13 +252,30 @@ class MockBackend:
             return 0, _fake_key() + "\n"
         if cmd[:3] == ["wg", "show", "all"]:
             return 0, self._dumps[container]
-        if "syncconf" in joined:
+        if len(cmd) >= 2 and cmd[1] == "syncconf":
             self.synced.append(container)
+            return 0, ""
+        if cmd[:2] == ["sh", "-c"] and "curl -s" in cmd[2] and " -o " in cmd[2]:
+            # File downloads (Telegram proxy config) — record empty files.
+            for target in cmd[2].split(" -o ")[1:]:
+                files[target.split()[0]] = ""
             return 0, ""
         if cmd[:2] == ["sh", "-c"] and "| base64 -d >" in cmd[2]:
             b64, path = cmd[2].split("| base64 -d >", 1)
             b64 = b64.replace("echo", "").strip()
             files[path.strip()] = base64.b64decode(b64).decode()
+            return 0, ""
+        if cmd[:2] == ["sh", "-c"] and cmd[2].startswith("ls -1 "):
+            prefix = cmd[2].split("ls -1 ", 1)[1].split(" 2>/dev/null")[0].rstrip("*")
+            hits = sorted(p for p in files if p.startswith(prefix))
+            return (0, "\n".join(hits) + "\n") if hits else (1, "")
+        if cmd[:2] == ["mkdir", "-p"]:
+            return 0, ""
+        if cmd[:2] == ["chmod", "+x"]:
+            self.chmodded.append(cmd[2])
+            return 0, ""
+        if cmd[:2] == ["rm", "-f"]:
+            files.pop(cmd[2], None)
             return 0, ""
         return 1, f"mock: unsupported command: {joined}"
 
@@ -229,12 +284,45 @@ class MockBackend:
             raise ContainerNotFound(container)
         self.restarted.append(container)
 
+    # --- Deployment operations (record-only) ---
+
+    def pull_image(self, image: str) -> str:
+        self.pulled.append(image)
+        return image
+
+    def run_container(self, name, image, *, ports, env, volumes, privileged=False,
+                      cap_add=(), sysctls=None, ulimits=None, restart_always=True):
+        self.ran.append({"name": name, "image": image, "ports": ports, "env": env,
+                         "volumes": volumes, "privileged": privileged,
+                         "cap_add": list(cap_add), "sysctls": sysctls or {}})
+        if not any(s.name == name for s in self._services):
+            self._services.append(ServiceInfo(name, "running", image,
+                                              datetime.now(timezone.utc).isoformat(),
+                                              ", ".join(f"{k}->{v}" for k, v in ports.items())))
+        self._fs.setdefault(name, {})
+        self._inspect.setdefault(name, {"env": dict(env), "ports": dict(ports),
+                                        "networks": {"bridge": {"ip": "172.17.0.7"}}})
+
+    def remove_container(self, name: str, remove_volumes: bool = False) -> None:
+        self.removed.append((name, remove_volumes))
+        self._services = [s for s in self._services if s.name != name]
+        self._fs.pop(name, None)
+        self._inspect.pop(name, None)
+
+    def ensure_network(self, name: str, subnet: str) -> None:
+        # Record-only: the mock does not model pre-existing networks.
+        self.networks_created.append((name, subnet))
+
+    def connect_network(self, network: str, container: str, ip: str = "") -> None:
+        self.network_connects.append((network, container, ip))
+
+    def build_image(self, tag: str, dockerfile_text: str) -> None:
+        self.built.append(tag)
+
+    def image_exists(self, image: str) -> bool:
+        return image in self.pulled or image in self.built
+
     def inspect(self, container: str) -> dict:
         if container not in self._inspect:
             raise ContainerNotFound(container)
         return copy.deepcopy(self._inspect[container])
-
-    def logs(self, container: str, tail: int = 200) -> str:
-        if container not in {s.name for s in self._services}:
-            raise ContainerNotFound(container)
-        return "\n".join(f"2026-11-05T20:0{i % 10}: mock log line {i} for {container}" for i in range(min(tail, 20)))

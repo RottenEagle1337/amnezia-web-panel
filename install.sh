@@ -91,7 +91,7 @@ if [ -z "$PASS" ]; then
 fi
 
 # --- Server address for client configs ---
-GUESS=$(curl -4 -s --max-time 5 ifconfig.me || true)
+GUESS=$(curl -4 -s --max-time 5 https://ifconfig.me || true)
 echo "The public server address will be embedded into VPN client configs."
 if [ -n "$GUESS" ]; then
   read -rp "Public IP/domain of the server [$GUESS]: " HOST
@@ -100,6 +100,8 @@ else
   read -rp "Public IP/domain of the server: " HOST
 fi
 [ -n "$HOST" ] || { echo "Error: server address is required"; exit 1; }
+# HOST lands in .env verbatim — no newlines or env-syntax characters allowed.
+[[ "$HOST" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Error: invalid server address"; exit 1; }
 
 # --- The password hash is computed inside the image (no Python needed on the host) ---
 # NOTE: plain `docker build`, not `docker compose build` — compose validates

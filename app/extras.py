@@ -1,8 +1,8 @@
 """Detection and info for Amnezia side services: MTProxy, Telemt, AmneziaDNS.
 
 Data sources (inside containers, matching the official Amnezia deploy):
-- amnezia-mtproxy: /data/secret (32 hex), env MTPROXY_TRANSPORT_MODE /
-  MTPROXY_TLS_DOMAIN / MTPROXY_PORT, port bindings
+- amnezia-mtproxy: /data/secret (32 hex), /data/mtproxy-meta (mode/domain),
+  port bindings
 - amnezia-telemt:  /data/config.toml ([access.users], [censorship], modes)
 - amnezia-dns:     container on amnezia-dns-net, usually 172.29.172.254
 """
@@ -55,7 +55,10 @@ def _running(backend: Backend, name: str) -> bool:
 
 
 def _read_file(backend: Backend, container: str, path: str) -> str:
-    code, out = backend.exec(container, ["cat", path])
+    try:
+        code, out = backend.exec(container, ["cat", path])
+    except ContainerNotFound:
+        return ""
     return out if code == 0 else ""
 
 
@@ -73,8 +76,14 @@ def mtproxy_info(backend: Backend, endpoint_host: str) -> ProxyInfo:
     except ContainerNotFound:
         return info
     env = meta["env"]
-    info.mode = env.get("MTPROXY_TRANSPORT_MODE", "")
-    info.domain = env.get("MTPROXY_TLS_DOMAIN", "")
+    # Client-deployed containers carry no env: state lives in /data/mtproxy-meta.
+    kv = dict(
+        line.split("=", 1) for line in
+        _read_file(backend, MTPROXY_CONTAINER, "/data/mtproxy-meta").splitlines()
+        if "=" in line
+    )
+    info.mode = kv.get("mode") or env.get("MTPROXY_TRANSPORT_MODE", "")
+    info.domain = kv.get("domain") or env.get("MTPROXY_TLS_DOMAIN", "")
     info.port = env.get("MTPROXY_PORT", "") or next(iter(meta["ports"].values()), "")
     secret = _read_file(backend, MTPROXY_CONTAINER, MTPROXY_SECRET_PATH).strip()
     if not info.running or not secret:
@@ -94,7 +103,8 @@ def telemt_info(backend: Backend, endpoint_host: str) -> ProxyInfo:
     except ContainerNotFound:
         return info
     info.port = next(iter(meta["ports"].values()), "")
-    raw = _read_file(backend, TELEMT_CONTAINER, TELEMT_CONFIG_PATH)
+    raw = _read_file(backend, TELEMT_CONTAINER, "/etc/telemt/config.toml") or \
+        _read_file(backend, TELEMT_CONTAINER, TELEMT_CONFIG_PATH)
     if not raw:
         return info
     try:

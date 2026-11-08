@@ -74,6 +74,7 @@ def build_vpn_link(
     endpoint_host: str,
     endpoint_port: str,
     config_text: str,
+    location: str = "",
 ) -> str:
     """Self-hosted guest key in the format the AmneziaVPN app imports."""
     v3 = is_v3(cfg)
@@ -105,18 +106,30 @@ def build_vpn_link(
         "server_pub_key": server_public_key,
     }
 
-    awg = {
-        **params,
-        "protocol_version": "3.1" if v3 else "2.0",
-        "last_config": json.dumps(last_config, ensure_ascii=False, indent=2),
-        "port": str(listen_port),
-        "transport_proto": "udp",
-    }
+    if container == "amnezia-wireguard":
+        # Classic WireGuard: the app expects a "wireguard" block, no obfuscation.
+        block_key = "wireguard"
+        block = {
+            "last_config": json.dumps(last_config, ensure_ascii=False, indent=2),
+            "port": str(listen_port),
+            "transport_proto": "udp",
+        }
+        description = f"{client_name} | {location or 'WireGuard'}"
+    else:
+        block_key = "awg"
+        block = {
+            **params,
+            "protocol_version": "3.1" if v3 else "2.0",
+            "last_config": json.dumps(last_config, ensure_ascii=False, indent=2),
+            "port": str(listen_port),
+            "transport_proto": "udp",
+        }
+        description = f"{client_name} | {location or ('AmneziaWG3' if v3 else 'AmneziaWG')}"
 
     server_json = {
-        "containers": [{"awg": awg, "container": container}],
+        "containers": [{block_key: block, "container": container}],
         "defaultContainer": container,
-        "description": f"{client_name} | {'AmneziaWG3' if v3 else 'AmneziaWG'}",
+        "description": description,
         "dns1": DNS1,
         "dns2": DNS2,
         "hostName": endpoint_host,

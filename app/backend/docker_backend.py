@@ -42,9 +42,63 @@ class DockerBackend:
     def restart(self, container: str) -> None:
         self._get(container).restart(timeout=10)
 
-    def logs(self, container: str, tail: int = 200) -> str:
-        c = self._get(container)
-        return c.logs(tail=tail).decode("utf-8", "replace")
+    def pull_image(self, image: str) -> str:
+        img = self._client.images.pull(image)
+        return img.tags[0] if img.tags else img.id
+
+    def run_container(self, name, image, *, ports, env, volumes, privileged=False,
+                      cap_add=(), sysctls=None, ulimits=None, restart_always=True):
+        from docker.types import Ulimit
+        self._client.containers.run(
+            image, name=name, detach=True,
+            # No container logging, same as the official client (--log-driver none).
+            log_config=docker.types.LogConfig(type="none"),
+            restart_policy={"Name": "always"} if restart_always else {},
+            ports={k: v for k, v in ports.items()}, environment=env, volumes=volumes,
+            privileged=privileged, cap_add=list(cap_add), sysctls=sysctls or {},
+            ulimits=[Ulimit(name="nofile", soft=65536, hard=65536)] if ulimits else None)
+
+    def remove_container(self, name: str, remove_volumes: bool = False) -> None:
+        try:
+            c = self._get(name)
+        except ContainerNotFound:
+            return
+        c.remove(force=True, v=remove_volumes)
+
+    def ensure_network(self, name: str, subnet: str) -> None:
+        try:
+            self._client.networks.get(name)
+        except docker.errors.NotFound:
+            pool = docker.types.IPAMPool(subnet=subnet)
+            self._client.networks.create(name, driver="bridge",
+                                         ipam=docker.types.IPAMConfig(pool_configs=[pool]))
+
+    def connect_network(self, network: str, container: str, ip: str = "") -> None:
+        net = self._client.networks.get(network)
+        try:
+            net.connect(container, ipv4_address=ip or None)
+        except docker.errors.APIError as exc:
+            if "already exists" not in str(exc):
+                raise
+
+    def build_image(self, tag: str, dockerfile_text: str) -> None:
+        import io
+        import tarfile
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w") as tar:
+            data = dockerfile_text.encode()
+            info = tarfile.TarInfo("Dockerfile")
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+        buf.seek(0)
+        self._client.images.build(fileobj=buf, custom_context=True, tag=tag, rm=True)
+
+    def image_exists(self, image: str) -> bool:
+        try:
+            self._client.images.get(image)
+            return True
+        except docker.errors.ImageNotFound:
+            return False
 
     def inspect(self, container: str) -> dict:
         c = self._get(container)
