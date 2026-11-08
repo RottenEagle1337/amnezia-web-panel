@@ -3,11 +3,22 @@
 A lightweight web panel for a self-hosted [Amnezia VPN](https://github.com/amnezia-vpn/amnezia-client) server.
 It runs on the same host as the Amnezia containers, inside your local network.
 
+![Release](https://img.shields.io/badge/release-0.2.0-blueviolet)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
 ![Docker](https://img.shields.io/badge/docker-compose-2496ED)
-![Tests](https://img.shields.io/badge/tests-102%20passed-34d399)
+![Tests](https://img.shields.io/badge/tests-103%20passed-34d399)
 ![License](https://img.shields.io/badge/license-GPL--3.0-orange)
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/login.png" width="340" alt="Sign in">
+</p>
+
+| Info — containers and the server as seen from outside | Keys — protocol info and key issue |
+|---|---|
+| ![Info](docs/screenshots/info.png) | ![Keys](docs/screenshots/keys.png) |
 
 ## Features
 
@@ -167,6 +178,9 @@ installed from the panel are discovered by the Amnezia app (and vice versa).
 Removal optionally wipes data volumes. Xray and OpenVPN stay manual for now —
 install them from the official app.
 
+> Note: removing a protocol in the panel does not remove it from the Amnezia
+> app's server view — see [Known limitations](#known-limitations).
+
 ## Config editor
 
 The **Server config** button on a protocol page opens a structured editor for
@@ -177,6 +191,9 @@ the live config (`wg0.conf` / `awg0.conf`, Telemt `config.toml`).
 - The previous config is backed up automatically (`.bak-<timestamp>`); any backup
   can be restored from the same page.
 - Client peers are never touched — only the `[Interface]` section.
+
+> Note: edits made here do not propagate to the Amnezia app —
+> see [Known limitations](#known-limitations).
 
 ## Security
 
@@ -192,6 +209,9 @@ the live config (`wg0.conf` / `awg0.conf`, Telemt `config.toml`).
 
 ## Troubleshooting
 
+**Changes made in the panel do not show up in the Amnezia app.** See
+[Known limitations](#known-limitations).
+
 **`readlink: Permission denied` / `Unable to modify interface: No such device`
 when issuing a WireGuard key.** On Ubuntu 24.04+ the host ships an AppArmor
 profile named `wg-quick` that also confines `wg-quick` *inside containers*,
@@ -204,6 +224,17 @@ it also unbreaks the official client:
 sudo apt install -y apparmor-utils && sudo aa-complain /etc/apparmor.d/wg-quick
 docker restart amnezia-wireguard
 ```
+
+## Known limitations
+
+- **The Amnezia app does not pick up panel-side changes.** Editing a server
+  config (port, obfuscation params) or removing a protocol/service in the
+  panel changes the real containers, but the Amnezia client keeps showing the
+  old state — the app caches the server configuration locally. Keys issued in
+  the app may then contain stale endpoints. Workaround: re-check/re-add the
+  server in the app after such changes. The issue is being investigated.
+- An old `amnezia-awg` (AWG 2.0) container is visible in Info but is not
+  manageable — remove it and install WireGuard instead.
 
 ## Project layout
 
@@ -222,7 +253,7 @@ app/
   crypto.py            WireGuard keys (X25519, pure Python)
   hostinfo.py          server's external view (ipinfo.io over HTTPS, 5 min cache)
   backend/             docker socket (prod) / in-memory mock (development)
-tests/                 pytest: 102 tests
+tests/                 pytest: 103 tests
 docs/research.md       Amnezia formats research (step 1)
 install.sh             one-command server setup
 uninstall.sh/.ps1      full removal scripts

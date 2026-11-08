@@ -72,3 +72,10 @@ def test_strip_for_syncconf():
         assert not any(l.startswith(gone) for l in stripped.splitlines()), gone
     for keep in ("PrivateKey", "ListenPort", "Jc = 3", "PublicKey", "PresharedKey", "AllowedIPs"):
         assert keep in stripped, keep
+
+
+def test_strip_drops_comments():
+    text = "[Interface]\n# comment about Address\nPrivateKey = k\n; another\n\n[Peer]\nPublicKey = p\n"
+    stripped = awg.strip_for_syncconf(text)
+    assert "#" not in stripped and ";" not in stripped.split("=")[0]
+    assert "PrivateKey = k" in stripped and "PublicKey = p" in stripped

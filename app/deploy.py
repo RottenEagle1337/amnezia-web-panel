@@ -174,6 +174,7 @@ wg-quick down "$CONF" 2>/dev/null || ip link del "$IFACE" 2>/dev/null || true
 if [ -f "$CONF" ]; then
   if ! (wg-quick up "$CONF"); then
     echo "wg-quick failed (host AppArmor?) - falling back to direct setup"
+    ip link del "$IFACE" 2>/dev/null || true
     ip link add dev "$IFACE" type wireguard
     grep -vE '^[[:space:]]*(Address|DNS|DNSSearch|MTU|Table|PreUp|PostUp|PreDown|PostDown|SaveConfig)[[:space:]]*=' "$CONF" > /tmp/.wg0.stripped
     wg setconf "$IFACE" /tmp/.wg0.stripped

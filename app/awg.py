@@ -183,6 +183,9 @@ def strip_for_syncconf(conf_text: str) -> str:
     AppArmor profiles (Ubuntu 24.04+) can break wg-quick inside containers."""
     out = []
     for line in conf_text.splitlines():
+        # wg syncconf parses no comments — drop them too
+        if line.strip().startswith(("#", ";")):
+            continue
         key = line.split("=", 1)[0].strip()
         if key in _STRIP_DROP:
             continue
