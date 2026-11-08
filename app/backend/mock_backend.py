@@ -277,6 +277,24 @@ class MockBackend:
         if cmd[:2] == ["rm", "-f"]:
             files.pop(cmd[2], None)
             return 0, ""
+        if cmd[:2] == ["sh", "-c"] and "xray uuid" in cmd[2]:
+            # configure_container.sh emulation: idempotent key material.
+            d = "/opt/amnezia/xray"
+            files.setdefault(f"{d}/xray_uuid.key",
+                             "11111111-2222-3333-4444-555555555555\n")
+            files.setdefault(f"{d}/xray_short_id.key", "0123456789abcdef\n")
+            files.setdefault(f"{d}/xray_private.key",
+                             base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=") + "\n")
+            files.setdefault(f"{d}/xray_public.key",
+                             base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=") + "\n")
+            return 0, ""
+        if cmd[:2] in (["sh", "-c"], ["bash", "-c"]) and "mknod" in cmd[2]:
+            return 0, ""
+        if cmd[:1] == ["mv"] and len(cmd) == 3:
+            if cmd[1] in files:
+                files[cmd[2]] = files.pop(cmd[1])
+                return 0, ""
+            return 1, f"mv: cannot stat '{cmd[1]}': No such file or directory"
         return 1, f"mock: unsupported command: {joined}"
 
     def restart(self, container: str) -> None:

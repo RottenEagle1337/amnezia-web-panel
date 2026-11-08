@@ -5,6 +5,7 @@ Obfuscation values are randomized per install, as the official client does.
 """
 from __future__ import annotations
 
+import json
 import re
 import secrets
 import time
@@ -41,6 +42,8 @@ DEPLOYABLE["wireguard"] = DeploySpec("wireguard", "amnezia-wireguard", "amnezia-
 DEPLOYABLE["awg2"] = DeploySpec("awg2", "amnezia-awg2", AWG_IMAGE, "vpn", 51821,
                                 version="3.1", subnet="10.9.9.0/24", iface="awg0",
                                 conf_path="/opt/amnezia/awg/awg0.conf")
+DEPLOYABLE["xray"] = DeploySpec("xray", "amnezia-xray", "amnezia-xray",
+                                "vpn", 443, proto="tcp+udp")
 
 
 _DOMAIN_RE = re.compile(
@@ -424,6 +427,142 @@ def deploy_telemt(backend: Backend, port: int, tls_domain: str) -> None:
     _write(backend, spec.container, "/etc/telemt/config.toml",
            TELEMT_CONFIG.format(port=port, tls_domain=tls_domain,
                                 secret=secrets.token_hex(16)))
+    backend.restart(spec.container)
+
+
+# --- Xray (VLESS + Reality) -------------------------------------------------
+# Mirrors client/server_scripts/xray: start.sh whitelist, configure_container.sh
+# idempotent keygen, XrayServerConfig::toServerInboundJson for server.json.
+
+XRAY_START_SH = '''#!/bin/bash
+echo "Container startup"
+
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p icmp -j ACCEPT
+iptables -A INPUT -p tcp --dport 80 -j ACCEPT
+iptables -A INPUT -p tcp --dport 443 -j ACCEPT
+iptables -A INPUT -p tcp --dport {port} -j ACCEPT
+iptables -A INPUT -p udp --dport {port} -j ACCEPT
+iptables -P INPUT DROP
+
+ip6tables -A INPUT -i lo -j ACCEPT
+ip6tables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+ip6tables -A INPUT -p ipv6-icmp -j ACCEPT
+ip6tables -P INPUT DROP
+
+# kill daemons in case of restart
+killall -KILL xray
+
+# start daemons if configured
+if [ -f /opt/amnezia/xray/server.json ]; then (xray -config /opt/amnezia/xray/server.json); fi
+
+tail -f /dev/null
+'''
+
+# Verbatim logic of client/server_scripts/xray/configure_container.sh:
+# files live on the docker volume, so each key is generated only when really
+# missing (content check, not size); a half-written pair is never kept.
+XRAY_KEYGEN_SH = r'''
+XRAY_DIR=/opt/amnezia/xray
+has_key() {
+    [ -f "$1" ] && [ -n "$(tr -d '[:space:]' < "$1" 2>/dev/null)" ]
+}
+
+if ! has_key $XRAY_DIR/xray_uuid.key; then
+    XRAY_CLIENT_ID=$(xray uuid) && [ -n "$XRAY_CLIENT_ID" ] && printf '%s\n' "$XRAY_CLIENT_ID" > $XRAY_DIR/xray_uuid.key
+fi
+
+if ! has_key $XRAY_DIR/xray_short_id.key; then
+    XRAY_SHORT_ID=$(openssl rand -hex 8) && [ -n "$XRAY_SHORT_ID" ] && printf '%s\n' "$XRAY_SHORT_ID" > $XRAY_DIR/xray_short_id.key
+fi
+
+if has_key $XRAY_DIR/xray_private.key && ! has_key $XRAY_DIR/xray_public.key; then
+    XRAY_PRIVATE_KEY=$(tr -d '[:space:]' < $XRAY_DIR/xray_private.key)
+    DERIVED=$(xray x25519 -i "$XRAY_PRIVATE_KEY" 2>/dev/null)
+    XRAY_PUBLIC_KEY=$(printf '%s\n' "$DERIVED" | sed -n 's/.*[Pp]ublic[ ]*[Kk]ey:[[:space:]]*//p' | head -1)
+    XRAY_PUBLIC_KEY=$(echo $XRAY_PUBLIC_KEY | tr -d ' ')
+    if [ -n "$XRAY_PUBLIC_KEY" ]; then
+        printf '%s\n' "$XRAY_PUBLIC_KEY" > $XRAY_DIR/xray_public.key
+    fi
+fi
+
+if ! has_key $XRAY_DIR/xray_private.key || ! has_key $XRAY_DIR/xray_public.key; then
+    KEYPAIR=$(xray x25519)
+    XRAY_PRIVATE_KEY=$(printf '%s\n' "$KEYPAIR" | sed -n 's/.*[Pp]rivate[ ]*[Kk]ey:[[:space:]]*//p' | head -1)
+    XRAY_PUBLIC_KEY=$(printf '%s\n' "$KEYPAIR" | sed -n 's/.*[Pp]ublic[ ]*[Kk]ey:[[:space:]]*//p' | head -1)
+    XRAY_PRIVATE_KEY=$(echo $XRAY_PRIVATE_KEY | tr -d ' ')
+    XRAY_PUBLIC_KEY=$(echo $XRAY_PUBLIC_KEY | tr -d ' ')
+    if [ -n "$XRAY_PRIVATE_KEY" ] && [ -n "$XRAY_PUBLIC_KEY" ]; then
+        printf '%s\n' "$XRAY_PRIVATE_KEY" > $XRAY_DIR/xray_private.key.tmp
+        printf '%s\n' "$XRAY_PUBLIC_KEY" > $XRAY_DIR/xray_public.key.tmp
+        mv $XRAY_DIR/xray_private.key.tmp $XRAY_DIR/xray_private.key
+        mv $XRAY_DIR/xray_public.key.tmp $XRAY_DIR/xray_public.key
+    else
+        rm -f $XRAY_DIR/xray_private.key.tmp $XRAY_DIR/xray_public.key.tmp
+        echo "amnezia_xray_keygen=failed"
+    fi
+fi
+'''
+
+
+def _xray_server_json(port: int, private_key: str, short_id: str,
+                      clients: list, site: str = "www.googletagmanager.com") -> dict:
+    """XrayServerConfig::toServerInboundJson with the panel defaults."""
+    return {
+        "log": {"loglevel": "error"},
+        "inbounds": [{
+            "port": port,
+            "protocol": "vless",
+            "settings": {"clients": clients, "decryption": "none"},
+            "streamSettings": {
+                "network": "tcp",
+                "security": "reality",
+                "realitySettings": {
+                    "dest": f"{site}:443",
+                    "privateKey": private_key,
+                    "serverNames": [site],
+                    "shortIds": [short_id],
+                },
+            },
+        }],
+        "outbounds": [{"protocol": "freedom"}],
+    }
+
+
+def deploy_xray(backend: Backend, port: int) -> None:
+    """Deploy Xray (VLESS+Reality), mirroring the official client scripts."""
+    spec = DEPLOYABLE["xray"]
+    _absent(backend, spec, port)
+    dockerfile = (Path(__file__).parent / "deploy_assets" / "xray.Dockerfile").read_text()
+    backend.build_image(spec.image, dockerfile)  # client builds locally too
+    backend.run_container(
+        spec.container, spec.image,
+        ports={f"{port}/tcp": port, f"{port}/udp": port}, env={},
+        volumes={"amnezia-xray-data": {"bind": "/opt/amnezia/xray", "mode": "rw"}},
+        privileged=True, cap_add=["NET_ADMIN"])
+    _ensure_dir(backend, spec.container, "/opt/amnezia/xray")
+    _run_sh(backend, spec.container, XRAY_KEYGEN_SH, "xray key generation")
+    code, out = backend.exec(spec.container, ["cat", "/opt/amnezia/xray/xray_private.key"])
+    priv = out.strip() if code == 0 else ""
+    code, out = backend.exec(spec.container, ["cat", "/opt/amnezia/xray/xray_short_id.key"])
+    short_id = out.strip() if code == 0 else ""
+    if not priv or not short_id:
+        raise AWGError("xray key generation produced no keys")
+    _write(backend, spec.container, "/opt/amnezia/xray/server.json",
+           json.dumps(_xray_server_json(port, priv, short_id, []), indent=2))
+    _write(backend, spec.container, "/opt/amnezia/xray/clientsTable", "[]\n")
+    _write(backend, spec.container, "/opt/amnezia/start.sh", XRAY_START_SH.format(port=port))
+    code, out = backend.exec(spec.container, ["chmod", "+x", "/opt/amnezia/start.sh"])
+    if code != 0:
+        raise AWGError(f"chmod start.sh failed ({code}): {out.strip()}")
+    _run_sh(backend, spec.container,
+            "mkdir -p /dev/net; if [ ! -c /dev/net/tun ]; then mknod /dev/net/tun c 10 200; fi",
+            "tun device")
+    try:
+        backend.connect_network("amnezia-dns-net", spec.container)
+    except Exception:
+        pass  # DNS network is optional
     backend.restart(spec.container)
 
 
